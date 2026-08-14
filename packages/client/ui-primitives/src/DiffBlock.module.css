@@ -1,12 +1,15 @@
-/* Geometry mirrors CodeBlock/TerminalBlock (12px radius, code-block surface +
-   banner row, markdown code-block font) so a diff card reads as one family with
-   a fenced block and a terminal card. The deliberate divergence, shared with
+/* Geometry mirrors CodeBlock/TerminalBlock (12px radius, code-block surface,
+   markdown code-block font) so a diff card reads as one family with a fenced
+   block and a terminal card. The deliberate divergence, shared with
    TerminalBlock: the body keeps `white-space: pre` and scrolls horizontally,
-   because folding a source line destroys the indentation a diff is read by. */
+   because folding a source line destroys the indentation a diff is read by. The
+   side-by-side view is a table so both panes share column widths and scroll as
+   one; the inline view is a flex row list with a fixed gutter. */
 
 .block {
   --dsl-diff-radius: 12px;
   --dsl-diff-line-height: 22px;
+  --dsl-diff-gutter: 48px;
 
   position: relative;
   margin: 16px 0;
@@ -15,15 +18,44 @@
   border-radius: var(--dsl-diff-radius);
 }
 
-/* The copy control floats in the top-right corner over the body, so the card
-   has no empty banner row above its first diff line (the TUI diff card has no
-   banner either — only the footer). The block is position: relative, so this
-   anchors to the card. */
-.copyButton {
+/* The view toggle + copy control float in the top-right corner over the body,
+   so the card has no empty banner row above its first diff line (the TUI diff
+   card has no banner either — only the footer). The block is position:
+   relative, so this anchors to the card. */
+.controls {
   position: absolute;
   top: 8px;
   right: 12px;
   z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.toggle {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px;
+  background: var(--dsw-alias-markdown-code-segment-unselected);
+  border-radius: 6px;
+}
+
+.toggleButton {
+  border: none;
+  background: transparent;
+  padding: 2px 8px;
+  border-radius: 5px;
+  color: var(--dsw-alias-label-secondary);
+  cursor: pointer;
+  font: var(--dsw-font-xs-13);
+}
+
+.toggleButton[aria-pressed='true'] {
+  background: var(--dsw-alias-markdown-code-segment-selected);
+  color: var(--dsw-alias-label-primary);
+}
+
+.copyButton {
   background-color: transparent;
   border: none;
   padding: 0;
@@ -40,52 +72,74 @@
   overflow-y: hidden;
 }
 
-/* No wrapping, no word-break: a diff is read by its indentation. */
-.line {
-  min-height: var(--dsl-diff-line-height);
+/* --- side-by-side (split) view: one table, columns = left gutter | left |
+   right gutter | right, so both panes align and scroll together. --- */
+.splitTable {
+  border-collapse: collapse;
+  min-width: 100%;
+  line-height: var(--dsl-diff-line-height);
+}
+
+/* A line-number gutter: chrome, not content — kept out of text selection so a
+   copy of the visible rows carries the source, not the numbers. */
+.gutter {
+  color: var(--dsw-alias-label-tertiary);
+  text-align: right;
+  user-select: none;
+  vertical-align: top;
   white-space: pre;
 }
 
+.splitTable .gutter {
+  padding: 0 10px 0 0;
+}
+
+.cell {
+  vertical-align: top;
+  white-space: pre;
+  padding: 0 16px 0 0;
+}
+
+/* The diff's own meaning-carrying tint: removed on the error token, added on
+   the success token, as a low-alpha background so syntax-highlighted runs keep
+   their shiki colors while the line still reads as removed/added. Text color
+   covers the plain (unhighlighted) path; shiki spans override it inline. */
+.removed {
+  color: var(--dsw-alias-state-error-primary);
+  background: color-mix(in srgb, var(--dsw-alias-state-error-secondary) 10%, transparent);
+}
+
+.added {
+  color: var(--dsw-alias-state-success-primary);
+  background: color-mix(in srgb, var(--dsw-alias-state-success-secondary) 12%, transparent);
+}
+
 /* A file header: the path in the primary tone, set apart by weight. The copy
-   button floats over this first row's top-right corner, so reserve space at the
-   line's end for it — a long path scrolls under the button otherwise, and the
-   button's hit area would eat clicks on the path's tail. */
+   control floats over this first row's top-right corner, so reserve space at
+   the line's end for it — a long path scrolls under the control otherwise. */
 .path {
   color: var(--dsw-alias-label-primary);
   font-weight: 600;
-  padding-right: 56px;
+  white-space: pre;
+  line-height: var(--dsl-diff-line-height);
+  padding-right: 150px;
 }
 
 /* A same-file second hunk's separator (a scattered edit), in the dim tone. */
 .gap {
   color: var(--dsw-alias-label-tertiary);
+  white-space: pre;
+  line-height: var(--dsl-diff-line-height);
 }
 
-/* The diff's own meaning-carrying colors: removed on the error token, added on
-   the success token. A `- `/`+ ` prefix is drawn here so a copied line and the
-   shown line agree, and so the sign reads without relying on color alone. */
-.del::before {
-  content: '- ';
-  color: var(--dsw-alias-state-error-primary);
-}
-
-.del {
-  color: var(--dsw-alias-state-error-primary);
-}
-
-.add::before {
-  content: '+ ';
-  color: var(--dsw-alias-state-success-primary);
-}
-
-.add {
-  color: var(--dsw-alias-state-success-primary);
+.expandRow td {
+  padding: 0;
 }
 
 .expand {
   display: block;
   width: 100%;
-  padding: 0;
+  padding: 0 14px;
   border: none;
   background-color: transparent;
   color: var(--dsw-alias-label-tertiary);
@@ -96,6 +150,33 @@
 
 .expand:hover {
   color: var(--dsw-alias-label-secondary);
+}
+
+/* --- inline (unified) view: a flex row per line — prefix, gutter, content. --- */
+.inlineRow {
+  display: flex;
+  min-height: var(--dsl-diff-line-height);
+  line-height: var(--dsl-diff-line-height);
+  white-space: pre;
+}
+
+/* The ` ` / `-` / `+` column: chrome, not content, so it never lands in a
+   copied selection. */
+.prefix {
+  flex: none;
+  width: 1.5ch;
+  text-align: center;
+  user-select: none;
+}
+
+.inlineRow .gutter {
+  flex: none;
+  width: var(--dsl-diff-gutter);
+  padding-right: 14px;
+}
+
+.content {
+  white-space: pre;
 }
 
 /* The change summary, dim under the body: `└ +A -R · N file(s)`, the same
