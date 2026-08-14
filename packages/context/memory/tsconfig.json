@@ -9,19 +9,16 @@
   ],
   "references": [
     {
-      "path": "../../../vendor/cosmokit"
-    },
-    {
       "path": "../../../vendor/cordis"
     },
     {
-      "path": "../../interaction/commands"
+      "path": "../../llm/llm"
     },
     {
-      "path": "../compaction"
+      "path": "../../core/agent"
     },
     {
-      "path": "../../distill/distill"
+      "path": "../../core/session"
     },
     {
       "path": "../../runtime-diagnostics/invariants"

@@ -234,6 +234,13 @@
       config:
         maxBytes: 65536
 
+    # Persistent `.agents/memory` notes injected once per session as background
+    # instructions (see dsh-memory). Project and user scopes are both read.
+    - id: memory
+      name: '@deepseek-ai/dsh-memory'
+      config:
+        maxBytes: 65536
+
     - id: skill
       name: '@deepseek-ai/dsh-skill'
 
@@ -286,8 +293,15 @@
 
     # Human `/compact`: one useful reduction below the automatic threshold. Backend
     # independent, so it follows whichever compaction service this leaf mounts.
+    # `--skill` / `--memory` flags additionally distill the conversation through
+    # the distillation service below.
     - id: command-compact
       name: '@deepseek-ai/dsh-command-compact'
+
+    # Conversation distillation into durable skills/memories (project or user
+    # scope), consumed by `/compact --skill` / `/compact --memory`.
+    - id: distill
+      name: '@deepseek-ai/dsh-distill'
 
     - id: subagent
       name: '@deepseek-ai/dsh-subagent'

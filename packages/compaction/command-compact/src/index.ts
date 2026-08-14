@@ -1,16 +1,51 @@
 /**
- * Human-facing `/compact` command over the backend-independent compaction seam.
+ * Human-facing `/compact` command over the backend-independent compaction seam,
+ * with optional distillation of the conversation into a durable skill or memory.
  * @module @deepseek-ai/dsh-command-compact
  */
 
 import type { Context } from '@deepseek-ai/cordis'
 import { ManualCompactionError } from '@deepseek-ai/dsh-compaction'
+import { assertSkillName } from '@deepseek-ai/dsh-distill'
 import type { CommandInvocation, CommandResult } from '@deepseek-ai/dsh-commands'
 
 export const name = 'command-compact'
-export const inject = ['commands', 'compaction']
+export const inject = ['commands', 'compaction', 'distill']
 
-const USAGE = 'Usage: /compact (no arguments)'
+const USAGE = 'Usage: /compact [--skill <name>] [--memory <title>]'
+
+/** Parsed optional distillation flags. */
+interface CompactArgs {
+  /** Kebab-case skill name to distill after compaction. */
+  skill?: string
+  /** Free-form memory title to distill after compaction. */
+  memory?: string
+}
+
+/** Parse `/compact`'s optional flags; `--memory` consumes the rest of the line. */
+function parseArgs(rawInput: string): CompactArgs | { error: string } {
+  const trimmed = rawInput.trim()
+  if (trimmed.length === 0) return {}
+  const args: CompactArgs = {}
+  let rest = trimmed
+  while (rest.length > 0) {
+    if (rest.startsWith('--skill')) {
+      rest = rest.slice('--skill'.length).trimStart()
+      const match = /^(\S+)(?:\s+|$)/.exec(rest)
+      if (match === null || match[1] === undefined) return { error: USAGE }
+      args.skill = match[1]
+      rest = rest.slice(match[0].length).trimStart()
+    } else if (rest.startsWith('--memory')) {
+      rest = rest.slice('--memory'.length).trimStart()
+      if (rest.length === 0) return { error: USAGE }
+      args.memory = rest
+      rest = ''
+    } else {
+      return { error: USAGE }
+    }
+  }
+  return args
+}
 
 /** Fail loudly if a locally closed union gains an unhandled member. */
 /* v8 ignore start -- closed-union backstop is unreachable without violating the TypeScript contract */
@@ -54,21 +89,55 @@ function expectedFailure(error: ManualCompactionError): CommandResult {
   }
 }
 
-/** Execute one argument-free manual compaction request. */
+/** Render an arbitrary distillation failure without trusting its coercion. */
+function renderThrown(value: unknown): string {
+  try {
+    return String(value)
+  } catch {
+    return '<unrenderable thrown value>'
+  }
+}
+
+/** Execute one manual compaction request with optional distillation. */
 async function executeCompact(
   ctx: Context,
   invocation: CommandInvocation,
 ): Promise<CommandResult> {
-  if (invocation.rawInput.trim().length > 0) {
-    return { kind: 'error', text: USAGE }
+  const parsed = parseArgs(invocation.rawInput)
+  if ('error' in parsed) return { kind: 'error', text: parsed.error }
+  if (parsed.skill !== undefined) {
+    try {
+      assertSkillName(parsed.skill)
+    } catch {
+      return { kind: 'error', text: `Invalid skill name "${parsed.skill}": use lowercase kebab-case.` }
+    }
   }
   try {
     const result = await ctx.compaction.compactNow(invocation.agent, invocation.signal, invocation.commandId)
-    if (result === null) return { kind: 'success', text: 'No compactable history yet.' }
+    const lines = [
+      result === null
+        ? 'No compactable history yet.'
+        : `Compacted ${result.shadowedSeqs.length} history items (~${result.shadowedTokenCount} tokens).`,
+    ]
+    try {
+      if (parsed.skill !== undefined) {
+        const distilled = await ctx.distill.distillSkill(invocation.agent, parsed.skill, invocation.signal)
+        lines.push(`Saved skill "${distilled.name}" (${distilled.scope}) to ${distilled.path}`)
+      }
+      if (parsed.memory !== undefined) {
+        const distilled = await ctx.distill.distillMemory(invocation.agent, parsed.memory, invocation.signal)
+        lines.push(`Saved memory "${distilled.name}" (${distilled.scope}) to ${distilled.path}`)
+      }
+    } catch (distillError: unknown) {
+      return {
+        kind: 'error',
+        text: `${result === null ? 'Nothing was compacted' : 'Compaction succeeded'}, but distillation failed: ${renderThrown(distillError)}`,
+      }
+    }
     return {
       kind: 'success',
-      text: `Compacted ${result.shadowedSeqs.length} history items (~${result.shadowedTokenCount} tokens).`,
-      sourceEventSeq: result.summarySeq,
+      text: lines.join('\n'),
+      ...result === null ? {} : { sourceEventSeq: result.summarySeq },
     }
   } catch (error: unknown) {
     if (invocation.signal.aborted) return { kind: 'error', text: 'Compaction cancelled.' }
@@ -79,7 +148,7 @@ async function executeCompact(
 
 /**
  * Register `/compact` for every composed human-command adapter.
- * @param ctx - context carrying the command registry and the compaction seam.
+ * @param ctx - context carrying the command registry, compaction seam, and distillation service.
  */
 export function apply(ctx: Context): void {
   const active = new Set<Promise<CommandResult>>()
@@ -99,7 +168,8 @@ export function apply(ctx: Context): void {
     yield async () => { await Promise.allSettled(active) }
     yield ctx.commands.register({
       name: 'compact',
-      description: 'Compact older conversation history',
+      description: 'Compact older conversation history, optionally distilling it into a skill or memory',
+      input: { hint: '--skill <name> | --memory <title>' },
       handler,
     })
   }, 'command-compact lifecycle')

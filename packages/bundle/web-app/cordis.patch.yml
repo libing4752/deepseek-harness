@@ -267,6 +267,10 @@
     - id: ui-plan
       name: '@deepseek-ai/dsh-client-ui-plan'
 
+    # Manual context compression: the composer tool-row button over /compact.
+    - id: ui-compact
+      name: '@deepseek-ai/dsh-client-ui-compact'
+
     - id: ui-user-questions
       name: '@deepseek-ai/dsh-client-ui-user-questions'
 
@@ -361,6 +365,9 @@
 - id: command-compact
   disabled: true
 
+- id: distill
+  disabled: true
+
 - id: tool-result-pruner
   disabled: true
 
@@ -399,6 +406,9 @@
   disabled: true
 
 - id: agent-instructions
+  disabled: true
+
+- id: memory
   disabled: true
 
 - id: tool-todo

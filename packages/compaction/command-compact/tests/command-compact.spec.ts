@@ -13,9 +13,11 @@ import {
   type ManualCompactAgentContext,
 } from '@deepseek-ai/dsh-compaction'
 import { Session, SessionId } from '@deepseek-ai/dsh-session'
+import { DistillId, type DistillResult } from '@deepseek-ai/dsh-distill'
 import * as commandCompact from '@deepseek-ai/dsh-command-compact'
 
 const COMPACTION_ID = CompactionId('command-compact-test')
+const DISTILL_ID = DistillId('command-compact-distill')
 
 const RESULT: CompactionResult = {
   compactionId: COMPACTION_ID,
@@ -83,9 +85,37 @@ class StubCompactionEngine extends CompactionEngine {
   }
 }
 
+class StubDistill {
+  skillCalls: { name: string }[] = []
+  memoryCalls: { title: string }[] = []
+
+  distillSkill(_agent: Agent, name: string, _signal: AbortSignal): Promise<DistillResult> {
+    this.skillCalls.push({ name })
+    return Promise.resolve({
+      distillId: DISTILL_ID,
+      kind: 'skill',
+      scope: 'project',
+      path: `/repo/.agents/skills/${name}/SKILL.md`,
+      name,
+    })
+  }
+
+  distillMemory(_agent: Agent, title: string, _signal: AbortSignal): Promise<DistillResult> {
+    this.memoryCalls.push({ title })
+    return Promise.resolve({
+      distillId: DISTILL_ID,
+      kind: 'memory',
+      scope: 'personal',
+      path: '/home/.agents/memory/my-memory.md',
+      name: 'my-memory',
+    })
+  }
+}
+
 interface Harness {
   readonly ctx: Context
   readonly compact: StubCompactionEngine
+  readonly distill: StubDistill
   readonly agent: Agent
   readonly plugin: Awaited<ReturnType<Context['plugin']>>
 }
@@ -94,6 +124,8 @@ async function harness(): Promise<Harness> {
   const ctx = new Context()
   await ctx.plugin(CommandRuntime)
   const compact = new StubCompactionEngine(ctx)
+  const distill = new StubDistill()
+  ctx.provide('distill', distill)
   const plugin = await ctx.plugin(commandCompact)
   const session = Session.create(SessionId('command-compact'))
   const agent = {
@@ -102,7 +134,7 @@ async function harness(): Promise<Harness> {
     options: {},
     reserveTurnAdmission: () => () => undefined,
   } as unknown as Agent
-  return { ctx, compact, agent, plugin }
+  return { ctx, compact, distill, agent, plugin }
 }
 
 async function run(
@@ -157,13 +189,14 @@ describe('@deepseek-ai/dsh-command-compact registration', () => {
   it('registers one argument-free command with Loader-safe exports and disposes it', async () => {
     const test = await harness()
     expect(commandCompact.name).toBe('command-compact')
-    expect(commandCompact.inject).toEqual(['commands', 'compaction'])
+    expect(commandCompact.inject).toEqual(['commands', 'compaction', 'distill'])
     expect('default' in commandCompact).toBe(false)
     const loader = Object.create(Loader.prototype) as Loader
     expect(loader.unwrapExports(commandCompact)).toBe(commandCompact)
     expect(test.ctx.commands.list(test.agent)).toContainEqual({
       name: 'compact',
-      description: 'Compact older conversation history',
+      description: 'Compact older conversation history, optionally distilling it into a skill or memory',
+      input: { hint: '--skill <name> | --memory <title>' },
     })
 
     await test.plugin.dispose()
@@ -198,7 +231,7 @@ describe('/compact human command', () => {
     const rejected = await run(test, ' now')
     expect(rejected.result).toEqual({
       kind: 'error',
-      text: 'Usage: /compact (no arguments)',
+      text: 'Usage: /compact [--skill <name>] [--memory <title>]',
     })
     expect(rejected.commandId).toBe(expectLastLifecycle(test, ' now', rejected.result))
     expect(test.compact.calls).toHaveLength(1)
@@ -276,5 +309,41 @@ describe('/compact human command', () => {
     await flushed.promise
     await disposal
     expect(disposed).toBe(true)
+  })
+})
+
+describe('/compact distillation flags', () => {
+  it('compacts then distills a skill and reports both outcomes', async () => {
+    const test = await harness()
+    const execution = await run(test, ' --skill my-skill')
+    expect(execution.result.kind).toBe('success')
+    expect(execution.result).toMatchObject({
+      kind: 'success',
+      text: 'Compacted 3 history items (~42 tokens).\nSaved skill "my-skill" (project) to /repo/.agents/skills/my-skill/SKILL.md',
+    })
+    expect(test.distill.skillCalls).toEqual([{ name: 'my-skill' }])
+    expect(test.distill.memoryCalls).toEqual([])
+  })
+
+  it('compacts then distills a memory whose title may contain spaces', async () => {
+    const test = await harness()
+    const execution = await run(test, ' --memory Coding Preferences')
+    expect(execution.result).toMatchObject({
+      kind: 'success',
+      text: 'Compacted 3 history items (~42 tokens).\nSaved memory "my-memory" (personal) to /home/.agents/memory/my-memory.md',
+    })
+    expect(test.distill.memoryCalls).toEqual([{ title: 'Coding Preferences' }])
+    expect(test.distill.skillCalls).toEqual([])
+  })
+
+  it('rejects an invalid skill name before compacting', async () => {
+    const test = await harness()
+    const execution = await run(test, ' --skill BadName')
+    expect(execution.result).toEqual({
+      kind: 'error',
+      text: 'Invalid skill name "BadName": use lowercase kebab-case.',
+    })
+    expect(test.compact.calls).toHaveLength(0)
+    expect(test.distill.skillCalls).toHaveLength(0)
   })
 })

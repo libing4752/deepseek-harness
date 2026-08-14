@@ -32,6 +32,12 @@
   config:
     maxBytes: 65536
 
+# Persistent `.agents/memory` notes injected once per session (project + user).
+- id: memory
+  name: '@deepseek-ai/dsh-memory'
+  config:
+    maxBytes: 65536
+
 # ── shell ───────────────────────────────────────────────────────────────────
 
 # `shell-env` stays in the HOST composition: `apps/cli/src/web.ts` injects it to
@@ -140,12 +146,16 @@
   isolate:
     compaction: true
     toolResultPruner: true
+    distill: true
   config:
     - id: compaction-basic
       name: '@deepseek-ai/dsh-compaction-basic'
 
     - id: command-compact
       name: '@deepseek-ai/dsh-command-compact'
+
+    - id: distill
+      name: '@deepseek-ai/dsh-distill'
 
     - id: tool-result-pruner
       name: '@deepseek-ai/dsh-compaction-tool-result-pruner'

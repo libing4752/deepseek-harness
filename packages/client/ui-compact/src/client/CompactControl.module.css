@@ -1,0 +1,20 @@
+.trigger {
+  /* Reserved for future size/color tokens; the Button variant already fits the tool row. */
+}
+
+.error {
+  display: inline-block;
+  max-width: 12rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11px;
+  line-height: 1;
+  color: var(--dsw-alias-danger, #d54941);
+}
+
+.footer {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+}

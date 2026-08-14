@@ -3,11 +3,12 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { afterEach, describe, expect, it } from 'vitest'
-import { Context } from '@deepseek-ai/cordis'
+import { Context, Service } from '@deepseek-ai/cordis'
 import Loader from '@deepseek-ai/cordis-plugin-loader'
 import Include from '@deepseek-ai/cordis-plugin-include'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import CommandRuntime from '@deepseek-ai/dsh-commands'
+import { DistillId, type DistillResult } from '@deepseek-ai/dsh-distill'
 import {
   CompactionId,
   CompactionEngine,
@@ -69,6 +70,32 @@ class LoaderCompactionEngine extends CompactionEngine {
   }
 }
 
+class LoaderDistill extends Service {
+  constructor(ctx: Context) {
+    super(ctx, 'distill')
+  }
+
+  distillSkill(_agent: Agent, name: string, _signal: AbortSignal): Promise<DistillResult> {
+    return Promise.resolve({
+      distillId: DistillId('loader-distill'),
+      kind: 'skill',
+      scope: 'project',
+      path: `/repo/.agents/skills/${name}/SKILL.md`,
+      name,
+    })
+  }
+
+  distillMemory(_agent: Agent, _title: string, _signal: AbortSignal): Promise<DistillResult> {
+    return Promise.resolve({
+      distillId: DistillId('loader-distill'),
+      kind: 'memory',
+      scope: 'personal',
+      path: '/home/.agents/memory/memory.md',
+      name: 'memory',
+    })
+  }
+}
+
 let root: string | undefined
 let context: Context | undefined
 
@@ -86,6 +113,7 @@ describe('command-compact real Loader composition', () => {
     await writeFile(configPath, [
       "- name: '@deepseek-ai/dsh-commands'",
       "- name: '@test/compact-backend'",
+      "- name: '@test/distill-backend'",
       "- name: '@deepseek-ai/dsh-command-compact'",
       '',
     ].join('\n'))
@@ -97,6 +125,7 @@ describe('command-compact real Loader composition', () => {
     const modules = new Map<string, unknown>([
       ['@deepseek-ai/dsh-commands', CommandRuntime],
       ['@test/compact-backend', LoaderCompactionEngine],
+      ['@test/distill-backend', LoaderDistill],
       ['@deepseek-ai/dsh-command-compact', commandCompact],
     ])
     context.loader.internal = {
@@ -121,7 +150,8 @@ describe('command-compact real Loader composition', () => {
     } as unknown as Agent
     expect(context.commands.list(agent)).toContainEqual({
       name: 'compact',
-      description: 'Compact older conversation history',
+      description: 'Compact older conversation history, optionally distilling it into a skill or memory',
+      input: { hint: '--skill <name> | --memory <title>' },
     })
     const execution = await context.commands.execute(agent, '/compact', new AbortController().signal)
     if (execution === undefined) throw new Error('Loader composition did not resolve /compact')
