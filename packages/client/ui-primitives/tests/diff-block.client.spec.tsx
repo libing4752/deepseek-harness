@@ -1,15 +1,20 @@
 // @vitest-environment jsdom
-// DiffBlock: the per-file hunk rows (path header, removed block, added block),
-// the same-file second-hunk gap separator, the `+A -R · N file(s)` footer and
-// its singular/plural, the head/tail height cap and its expand control, the
-// empty-diffs null render, and the copy control writing the prefixed diff text
-// on both the accepted and the refused clipboard paths. writeClipboard's own
-// return contract is pinned in terminal-block.spec.tsx (the shared return contract), so
-// only its DOM consequence is asserted here.
+// DiffBlock: the side-by-side (default) and inline views over per-file hunks —
+// the path header and same-file gap chrome, the line-aligned rows (context
+// stays aligned; removed/added/modified rows land on the correct side with
+// per-side line numbers), the `+A -R · N file(s)` footer counting only genuine
+// changes (context excluded), the side-by-side ↔ inline toggle, the syntax
+// highlighting for a known extension and its plain fallback, the highlight
+// budget, the head/tail height cap and expand control, the empty-diffs null
+// render, and the copy control writing the unified diff text on the accepted
+// and refused clipboard paths. writeClipboard's own return contract is pinned in
+// terminal-block.spec.tsx (the shared return contract), so only its DOM
+// consequence is asserted here.
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
-import { DEFAULT_DIFF_MAX_LINES, DiffBlock, type DiffHunk } from '../src/index.ts'
+import { DEFAULT_DIFF_MAX_LINES, DiffBlock } from '../src/index.ts'
+import { langFromPath } from '../src/DiffBlock.tsx'
 
 afterEach(cleanup)
 
@@ -17,14 +22,19 @@ beforeEach(() => {
   vi.useRealTimers()
 })
 
-/** The rendered body rows, one string per visible line (CSS-module class prefix). */
-function bodyRows(container: HTMLElement): string[] {
-  return [...container.querySelectorAll('[class*="_line_"]')].map(row => row.textContent ?? '')
+/** The change rows bearing a given role (`add`/`del`/`mod`/`ctx`). */
+function roleRows(container: HTMLElement, role: string): HTMLElement[] {
+  return [...container.querySelectorAll(`[data-role="${role}"]`)]
 }
 
-/** Only the changed rows (add/del), excluding the path header and gap chrome. */
-function changeRows(container: HTMLElement): string[] {
-  return [...container.querySelectorAll('[class*="_del_"], [class*="_add_"]')].map(row => row.textContent ?? '')
+/** The text of one side's content cells, in order (side-by-side view). */
+function sideTexts(container: HTMLElement, side: 'left' | 'right'): string[] {
+  return [...container.querySelectorAll(`[data-side="${side}"]`)].map(cell => cell.textContent ?? '')
+}
+
+/** One side's gutter numbers, in order (side-by-side view). */
+function gutters(container: HTMLElement, side: 'left' | 'right'): string[] {
+  return [...container.querySelectorAll(`[data-gutter="${side}"]`)].map(cell => cell.textContent ?? '')
 }
 
 /** `count` numbered added lines as one hunk's newText. */
@@ -32,44 +42,79 @@ function added(count: number): string {
   return Array.from({ length: count }, (_v, i) => `line ${i + 1}`).join('\n')
 }
 
-describe('DiffBlock structure', () => {
-  it('renders a create as a path header and an added block (no removed side)', () => {
-    const diffs: DiffHunk[] = [{ path: 'notes/new.txt', oldText: null, newText: 'hello\nworld' }]
-    const { container } = render(<DiffBlock diffs={diffs} />)
-    expect(screen.getByText('notes/new.txt')).toBeTruthy()
-    // No removed rows: both change lines are added.
-    expect(changeRows(container)).toEqual(['hello', 'world'])
-    expect(container.querySelectorAll('[class*="_del_"]').length).toBe(0)
-    expect(container.querySelectorAll('[class*="_add_"]').length).toBe(2)
+describe('langFromPath', () => {
+  it('maps a known extension to its language hint, case-insensitively', () => {
+    expect(langFromPath('src/a.ts')).toBe('ts')
+    expect(langFromPath('src/a.TSX')).toBe('tsx')
+    expect(langFromPath('conf.yml')).toBe('yaml')
+    expect(langFromPath('README.md')).toBe('md')
+    expect(langFromPath('C:\\src\\main.rs')).toBe('rs')
   })
 
-  it('renders an edit as a removed block above an added block', () => {
-    const diffs: DiffHunk[] = [{ path: 'a.ts', oldText: 'old', newText: 'new' }]
-    const { container } = render(<DiffBlock diffs={diffs} />)
-    expect(container.querySelectorAll('[class*="_del_"]').length).toBe(1)
-    expect(container.querySelectorAll('[class*="_add_"]').length).toBe(1)
-    expect(changeRows(container)).toEqual(['old', 'new'])
+  it('returns undefined for a dotfile, a multi-part or unknown extension, or no extension', () => {
+    expect(langFromPath('a.py.bak')).toBeUndefined()
+    expect(langFromPath('archive.tar.gz')).toBeUndefined()
+    expect(langFromPath('/dir.py/plain')).toBeUndefined()
+    expect(langFromPath('.gitignore')).toBeUndefined()
+    expect(langFromPath('/etc/hosts')).toBeUndefined()
+    expect(langFromPath('data.unknownext')).toBeUndefined()
+    expect(langFromPath('trailingdot.')).toBeUndefined()
+  })
+
+  it('never resolves an Object.prototype extension name', () => {
+    expect(langFromPath('foo.constructor')).toBeUndefined()
+    expect(langFromPath('foo.__proto__')).toBeUndefined()
+    expect(langFromPath('foo.hasOwnProperty')).toBeUndefined()
+  })
+})
+
+describe('DiffBlock side-by-side structure', () => {
+  it('renders a create as a path header and an added right pane (no left pane)', () => {
+    const { container } = render(<DiffBlock diffs={[{ path: 'notes/new.txt', oldText: null, newText: 'hello\nworld' }]} />)
+    expect(screen.getByText('notes/new.txt')).toBeTruthy()
+    expect(roleRows(container, 'add')).toHaveLength(2)
+    expect(roleRows(container, 'del')).toHaveLength(0)
+    expect(sideTexts(container, 'left')).toEqual(['', ''])
+    expect(sideTexts(container, 'right')).toEqual(['hello', 'world'])
+  })
+
+  it('renders an edit as one modified row pairing the removed and added lines', () => {
+    const { container } = render(<DiffBlock diffs={[{ path: 'a.txt', oldText: 'old', newText: 'new' }]} />)
+    expect(roleRows(container, 'mod')).toHaveLength(1)
+    expect(sideTexts(container, 'left')).toEqual(['old'])
+    expect(sideTexts(container, 'right')).toEqual(['new'])
+  })
+
+  it('keeps context lines aligned and counts only genuine changes in the footer', () => {
+    const { container } = render(<DiffBlock diffs={[{ path: 'a.txt', oldText: 'a\nb\nc', newText: 'a\nX\nc' }]} />)
+    expect(roleRows(container, 'ctx')).toHaveLength(2)
+    expect(roleRows(container, 'mod')).toHaveLength(1)
+    expect(sideTexts(container, 'left')).toEqual(['a', 'b', 'c'])
+    expect(sideTexts(container, 'right')).toEqual(['a', 'X', 'c'])
+    expect(screen.getByText('└ +1 -1 · 1 file')).toBeTruthy()
+  })
+
+  it('numbers each side per hunk, advancing only the changed side', () => {
+    const { container } = render(<DiffBlock diffs={[{ path: 'a.txt', oldText: 'a\nb', newText: '' }]} />)
+    expect(gutters(container, 'left')).toEqual(['1', '2'])
+    expect(gutters(container, 'right')).toEqual(['', ''])
   })
 
   it('opens a same-file second hunk with a gap instead of repeating the path', () => {
-    const diffs: DiffHunk[] = [
-      { path: 'a.ts', oldText: 'x', newText: 'y' },
-      { path: 'a.ts', oldText: 'p', newText: 'q' },
-    ]
-    const { container } = render(<DiffBlock diffs={diffs} />)
-    // One path header, one gap row.
-    expect(container.querySelectorAll('[class*="_path_"]').length).toBe(1)
-    expect(container.querySelectorAll('[class*="_gap_"]').length).toBe(1)
+    const { container } = render(
+      <DiffBlock diffs={[{ path: 'a.txt', oldText: 'x', newText: 'y' }, { path: 'a.txt', oldText: 'p', newText: 'q' }]} />,
+    )
+    expect(roleRows(container, 'mod')).toHaveLength(2)
+    expect([...container.querySelectorAll('[class*="_gap_"]')]).toHaveLength(1)
+    expect([...container.querySelectorAll('[class*="_path_"]')]).toHaveLength(1)
   })
 
   it('opens a new file with its own path header', () => {
-    const diffs: DiffHunk[] = [
-      { path: 'a.ts', oldText: 'x', newText: 'y' },
-      { path: 'b.ts', oldText: 'p', newText: 'q' },
-    ]
-    const { container } = render(<DiffBlock diffs={diffs} />)
-    expect(container.querySelectorAll('[class*="_path_"]').length).toBe(2)
-    expect(container.querySelectorAll('[class*="_gap_"]').length).toBe(0)
+    const { container } = render(
+      <DiffBlock diffs={[{ path: 'a.txt', oldText: 'x', newText: 'y' }, { path: 'b.txt', oldText: 'p', newText: 'q' }]} />,
+    )
+    expect([...container.querySelectorAll('[class*="_path_"]')]).toHaveLength(2)
+    expect([...container.querySelectorAll('[class*="_gap_"]')]).toHaveLength(0)
   })
 
   it('renders nothing for empty diffs', () => {
@@ -78,84 +123,134 @@ describe('DiffBlock structure', () => {
   })
 
   it('treats a trailing newline as a terminator, not an extra blank line', () => {
-    // A create whose newText ends in a newline is one added line, not two, and
-    // the footer counts one — the phantom `+ ` empty line the naive split drew.
-    const { container } = render(<DiffBlock diffs={[{ path: 'n.txt', oldText: null, newText: 'hello\n' }]} />)
-    expect(changeRows(container)).toEqual(['hello'])
+    render(<DiffBlock diffs={[{ path: 'n.txt', oldText: null, newText: 'hello\n' }]} />)
     expect(screen.getByText('└ +1 -0 · 1 file')).toBeTruthy()
   })
 
   it('renders a full deletion as removed-only with no phantom added line', () => {
-    // newText '' is zero added lines: an empty string must contribute nothing.
-    const { container } = render(<DiffBlock diffs={[{ path: 'gone.ts', oldText: 'a\nb', newText: '' }]} />)
-    expect(container.querySelectorAll('[class*="_add_"]').length).toBe(0)
+    const { container } = render(<DiffBlock diffs={[{ path: 'gone.txt', oldText: 'a\nb', newText: '' }]} />)
+    expect(roleRows(container, 'add')).toHaveLength(0)
+    expect(roleRows(container, 'del')).toHaveLength(2)
     expect(screen.getByText('└ +0 -2 · 1 file')).toBeTruthy()
   })
 
   it('keeps a genuine interior blank line', () => {
-    const { container } = render(<DiffBlock diffs={[{ path: 'a.ts', oldText: null, newText: 'x\n\ny' }]} />)
-    expect(container.querySelectorAll('[class*="_add_"]').length).toBe(3)
+    const { container } = render(<DiffBlock diffs={[{ path: 'a.txt', oldText: null, newText: 'x\n\ny' }]} />)
+    expect(roleRows(container, 'add')).toHaveLength(3)
+  })
+})
+
+describe('DiffBlock toggle and inline view', () => {
+  it('defaults to side-by-side and switches to inline on the toggle', () => {
+    const { container } = render(<DiffBlock diffs={[{ path: 'a.txt', oldText: 'old', newText: 'new' }]} />)
+    expect(container.querySelector('[data-diff]')?.getAttribute('data-mode')).toBe('split')
+    expect(screen.getByRole('button', { name: '并排' }).getAttribute('aria-pressed')).toBe('true')
+
+    fireEvent.click(screen.getByRole('button', { name: '行内' }))
+    expect(container.querySelector('[data-diff]')?.getAttribute('data-mode')).toBe('inline')
+    expect(screen.getByRole('button', { name: '行内' }).getAttribute('aria-pressed')).toBe('true')
+
+    fireEvent.click(screen.getByRole('button', { name: '并排' }))
+    expect(container.querySelector('[data-diff]')?.getAttribute('data-mode')).toBe('split')
+  })
+
+  it('renders the inline view as a unified `-`/`+`/` ` diff', () => {
+    const { container } = render(<DiffBlock diffs={[{ path: 'a.txt', oldText: 'a\nb\nc', newText: 'a\nX\nc' }]} />)
+    fireEvent.click(screen.getByRole('button', { name: '行内' }))
+    const prefixes = [...container.querySelectorAll('[class*="_prefix_"]')].map(span => span.textContent)
+    expect(prefixes).toEqual([' ', '-', '+', ' '])
+    expect(roleRows(container, 'ctx')).toHaveLength(2)
+    expect(roleRows(container, 'del')).toHaveLength(1)
+    expect(roleRows(container, 'add')).toHaveLength(1)
+  })
+})
+
+describe('DiffBlock syntax highlighting', () => {
+  it('highlights the code lines for a known extension into token spans', () => {
+    const { container } = render(<DiffBlock diffs={[{ path: 'a.ts', oldText: 'const a = 1', newText: 'const b = 2' }]} />)
+    const left = container.querySelector('[data-side="left"]')
+    const right = container.querySelector('[data-side="right"]')
+    expect(left?.querySelectorAll('span[style]').length).toBeGreaterThan(1)
+    expect(right?.querySelectorAll('span[style]').length).toBeGreaterThan(1)
+    expect(left?.textContent).toBe('const a = 1')
+    expect(right?.textContent).toBe('const b = 2')
+  })
+
+  it('renders bare text with no span wrappers for an unknown extension', () => {
+    const { container } = render(<DiffBlock diffs={[{ path: 'a.unknownext', oldText: 'x', newText: 'y' }]} />)
+    const left = container.querySelector('[data-side="left"]')
+    expect(left?.querySelectorAll('span').length).toBe(0)
+    expect(left?.textContent).toBe('x')
+  })
+
+  it('renders a side past the highlight budget as plain text', () => {
+    const big = 'x'.repeat(70_000)
+    const { container } = render(<DiffBlock diffs={[{ path: 'big.txt', oldText: big, newText: '' }]} />)
+    expect(roleRows(container, 'del')).toHaveLength(1)
+    expect(container.querySelectorAll('[data-side="left"] span[style]')).toHaveLength(0)
   })
 })
 
 describe('DiffBlock footer', () => {
   it('counts added and removed lines and one file', () => {
-    const diffs: DiffHunk[] = [{ path: 'a.ts', oldText: 'a\nb', newText: 'c' }]
-    render(<DiffBlock diffs={diffs} />)
+    render(<DiffBlock diffs={[{ path: 'a.txt', oldText: 'a\nb', newText: 'c' }]} />)
     expect(screen.getByText('└ +1 -2 · 1 file')).toBeTruthy()
   })
 
   it('pluralizes the distinct-file count', () => {
-    const diffs: DiffHunk[] = [
-      { path: 'a.ts', oldText: null, newText: 'x' },
-      { path: 'b.ts', oldText: null, newText: 'y' },
-    ]
-    render(<DiffBlock diffs={diffs} />)
+    render(
+      <DiffBlock diffs={[{ path: 'a.txt', oldText: null, newText: 'x' }, { path: 'b.txt', oldText: null, newText: 'y' }]} />,
+    )
     expect(screen.getByText('└ +2 -0 · 2 files')).toBeTruthy()
   })
 })
 
 describe('DiffBlock height cap', () => {
-  it('shows head and tail with an expand control past the cap, then all lines expanded', () => {
-    // One added line over the default cap forces the collapse.
-    const diffs: DiffHunk[] = [{ path: 'a.ts', oldText: null, newText: added(DEFAULT_DIFF_MAX_LINES) }]
-    // The path header counts as a row, so a body of maxLines added lines plus
-    // the header is one over the cap.
-    const { container } = render(<DiffBlock diffs={diffs} />)
-    const toggle = screen.getByRole('button', { name: /展开其余/ })
+  it('shows head and tail with an expand control past the cap, then all rows expanded', () => {
+    const { container } = render(<DiffBlock diffs={[{ path: 'a.txt', oldText: null, newText: added(10) }]} maxLines={4} />)
+    const toggle = screen.getByRole('button', { name: '展开其余 7 行差异' })
     expect(toggle.getAttribute('aria-expanded')).toBe('false')
-    // Collapsed shows fewer rows than the full body.
-    const collapsedCount = bodyRows(container).length
-    expect(collapsedCount).toBeLessThan(DEFAULT_DIFF_MAX_LINES + 1)
+    expect(roleRows(container, 'add')).toHaveLength(3)
+
     fireEvent.click(toggle)
     expect(screen.getByRole('button', { name: '收起差异' }).getAttribute('aria-expanded')).toBe('true')
-    expect(bodyRows(container).length).toBeGreaterThan(collapsedCount)
+    expect(roleRows(container, 'add')).toHaveLength(10)
   })
 
   it('shows no expand control at or under the cap', () => {
-    const diffs: DiffHunk[] = [{ path: 'a.ts', oldText: null, newText: added(4) }]
-    render(<DiffBlock diffs={diffs} maxLines={16} />)
+    render(<DiffBlock diffs={[{ path: 'a.txt', oldText: null, newText: added(4) }]} maxLines={16} />)
     expect(screen.queryByRole('button', { name: /展开其余|收起差异/ })).toBeNull()
+  })
+
+  it('caps at the documented default when maxLines is absent', () => {
+    const { container } = render(<DiffBlock diffs={[{ path: 'a.txt', oldText: null, newText: added(DEFAULT_DIFF_MAX_LINES) }]} />)
+    expect(screen.getByRole('button', { name: '展开其余 1 行差异' })).toBeTruthy()
+    expect(roleRows(container, 'add').length).toBeLessThan(DEFAULT_DIFF_MAX_LINES)
   })
 })
 
 describe('DiffBlock copy', () => {
-  it('copies the prefixed diff text and flips the label on success', async () => {
+  it('copies the unified diff text and flips the label on success', async () => {
     vi.useFakeTimers()
     const writeText = vi.fn().mockResolvedValue(undefined)
     Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText } })
-    const diffs: DiffHunk[] = [
-      { path: 'a.ts', oldText: 'old', newText: 'new' },
-      { path: 'a.ts', oldText: 'p', newText: 'q' },
-    ]
-    render(<DiffBlock diffs={diffs} />)
-    const copy = screen.getByRole('button', { name: '复制' })
-    await act(async () => { fireEvent.click(copy) })
-    // Path header, del/add prefixes, and the same-file gap all reach the clipboard.
-    expect(writeText).toHaveBeenCalledWith('a.ts\n- old\n+ new\n⋯\n- p\n+ q')
+    render(
+      <DiffBlock diffs={[{ path: 'a.txt', oldText: 'old', newText: 'new' }, { path: 'a.txt', oldText: 'p', newText: 'q' }]} />,
+    )
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: '复制' })) })
+    expect(writeText).toHaveBeenCalledWith('a.txt\n- old\n+ new\n⋯\n- p\n+ q')
     expect(screen.getByRole('button', { name: '复制成功' })).toBeTruthy()
     await act(async () => { await vi.advanceTimersByTimeAsync(1000) })
     expect(screen.getByRole('button', { name: '复制' })).toBeTruthy()
+  })
+
+  it('copies context lines with a space prefix', async () => {
+    vi.useFakeTimers()
+    const writeText = vi.fn().mockResolvedValue(undefined)
+    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText } })
+    render(<DiffBlock diffs={[{ path: 'a.txt', oldText: 'a\nb\nc', newText: 'a\nX\nc' }]} />)
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: '复制' })) })
+    expect(writeText).toHaveBeenCalledWith('a.txt\n a\n- b\n+ X\n c')
   })
 
   it('keeps the label on a refused clipboard write', async () => {
@@ -163,19 +258,18 @@ describe('DiffBlock copy', () => {
       configurable: true,
       value: { writeText: vi.fn().mockRejectedValue(new Error('denied')) },
     })
-    render(<DiffBlock diffs={[{ path: 'a.ts', oldText: null, newText: 'x' }]} />)
-    const copy = screen.getByRole('button', { name: '复制' })
-    await act(async () => { fireEvent.click(copy) })
+    render(<DiffBlock diffs={[{ path: 'a.txt', oldText: null, newText: 'x' }]} />)
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: '复制' })) })
     expect(screen.getByRole('button', { name: '复制' })).toBeTruthy()
+    expect(screen.queryByRole('button', { name: '复制成功' })).toBeNull()
   })
 
   it('ignores a second click while the copied label is showing', async () => {
     vi.useFakeTimers()
     const writeText = vi.fn().mockResolvedValue(undefined)
     Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText } })
-    render(<DiffBlock diffs={[{ path: 'a.ts', oldText: null, newText: 'x' }]} />)
-    const copy = screen.getByRole('button', { name: '复制' })
-    await act(async () => { fireEvent.click(copy) })
+    render(<DiffBlock diffs={[{ path: 'a.txt', oldText: null, newText: 'x' }]} />)
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: '复制' })) })
     await act(async () => { fireEvent.click(screen.getByRole('button', { name: '复制成功' })) })
     expect(writeText).toHaveBeenCalledTimes(1)
   })

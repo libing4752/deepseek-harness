@@ -102,6 +102,12 @@
     - id: cordis-host-runner
       name: '@deepseek-ai/dsh-cordis-host-runner'
 
+    # Read-only skills + memory catalog the browser's sidebar panel lists. It
+    # reads the host skill registry (preset layers resolve through the live
+    # agent) and the durable `.agents/memory` notes, never creating an agent.
+    - id: agents-catalog
+      name: '@deepseek-ai/dsh-agents-catalog'
+
     # Ordinary provider for the parsed Web flags. Its plugin-level injection
     # waits for cmdlineArgs; no launcher metadata or special row kind is needed.
     - id: web-startup
@@ -229,6 +235,11 @@
 
     - id: ui-skill
       name: '@deepseek-ai/dsh-client-ui-skill'
+
+    # Skills + memory catalog: the sidebar-foot trigger and modal panel over
+    # the agentsCatalog Remote.
+    - id: ui-agents-catalog
+      name: '@deepseek-ai/dsh-client-ui-agents-catalog'
 
     - id: ui-subagent
       name: '@deepseek-ai/dsh-client-ui-subagent'
