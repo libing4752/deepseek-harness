@@ -324,6 +324,22 @@ const SERVICE_ROLES: ServiceRole[] = [
     note: 'Merges provider skill catalogs; tool-skill renders the session-prefix catalog and loads complete skill bodies.',
   },
   {
+    key: 'agentsCatalog',
+    pkg: 'agents-catalog',
+    title: 'Read-only skills + memory catalog',
+    mode: 'core',
+    consumers: ['ui-agents-catalog'],
+    note: 'Lists a project\'s skill summaries and memory notes and loads one entry on demand; the web sidebar panel renders it.',
+  },
+  {
+    key: 'distill',
+    pkg: 'distill',
+    title: 'Conversation distillation',
+    mode: 'core',
+    consumers: ['command-compact'],
+    note: 'Replays a session\'s history through one auxiliary model call and writes a durable skill or memory artifact.',
+  },
+  {
     key: 'agents',
     pkg: 'agent',
     title: 'Agent service',

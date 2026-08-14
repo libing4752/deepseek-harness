@@ -305,6 +305,25 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     ],
   },
   {
+    key: 'agentsCatalog',
+    summary: 'Read-only catalog service.',
+    description: 'Read-only catalog service. The skill registry view mirrors the apiproxy `skill.list` resolution: a preset realm may mount its own `skills` service, so the live agent\'s scoped instance wins over the host registry.',
+    methods: [
+      {
+        signature: '@Remote async list(agent: Agent, signal: AbortSignal): Promise<AgentsCatalogList>',
+        description: 'List the project\'s skill summaries and memory notes for one agent.',
+        parameters: [{ name: 'agent', description: 'exact agent whose session cwd and scope select the catalog.' }, { name: 'signal', description: 'cancellation forwarded to skill discovery and memory reads.' }],
+        returns: 'the complete catalog, with an empty skill list when no registry is mounted.',
+      },
+      {
+        signature: '@Remote async read(agent: Agent, ref: CatalogRef, signal: AbortSignal): Promise<CatalogEntry | undefined>',
+        description: 'Load one entry\'s full content.',
+        parameters: [{ name: 'agent', description: 'exact agent whose session cwd and scope select the catalog.' }, { name: 'ref', description: 'which skill name or memory display path to load.' }, { name: 'signal', description: 'cancellation forwarded to the load.' }],
+        returns: 'the loaded entry, or `undefined` when it no longer exists.',
+      },
+    ],
+  },
+  {
     key: 'apiProxy',
     summary: 'Root interface of the unified API.',
     description: 'Root interface of the unified API. New client-request domain = one new file pair + one field here + one map row.',
@@ -535,6 +554,25 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         description: 'The backend\'s interaction capability.',
         parameters: [],
         returns: 'the discriminated capability consumers switch on.',
+      },
+    ],
+  },
+  {
+    key: 'distill',
+    summary: 'Concrete distillation service.',
+    description: 'Concrete distillation service. Subclasses may override summarize to swap the model-backed producer; the parsing and file framing stay fixed so the scope routing and file layout are always code-owned.',
+    methods: [
+      {
+        signature: 'async distillSkill(agent: Agent, name: string, signal: AbortSignal): Promise<DistillResult>',
+        description: 'Distill the conversation into a skill file and write it.',
+        parameters: [{ name: 'agent', description: 'owner of the session being distilled; supplies history and project cwd.' }, { name: 'name', description: 'kebab-case skill name (frontmatter name and directory).' }, { name: 'signal', description: 'cancellation forwarded to the model call.' }],
+        returns: 'the written artifact result.',
+      },
+      {
+        signature: 'async distillMemory(agent: Agent, title: string, signal: AbortSignal): Promise<DistillResult>',
+        description: 'Distill the conversation into a memory note and write it.',
+        parameters: [{ name: 'agent', description: 'owner of the session being distilled.' }, { name: 'title', description: 'note title; becomes the file slug and the `#` heading.' }, { name: 'signal', description: 'cancellation forwarded to the model call.' }],
+        returns: 'the written artifact result.',
       },
     ],
   },
@@ -2638,6 +2676,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface AgentPreset {\n    readonly id: string;\n    readonly trust: PresetTrust;\n    readonly path: string;\n    readonly name?: string;\n    readonly description?: string;\n    readonly order?: number;\n    readonly broken?: string;\n}',
   },
   {
+    name: 'AgentsCatalogList',
+    declaration: 'export interface AgentsCatalogList {\n    readonly skills: readonly SkillItem[];\n    readonly memory: readonly MemoryItem[];\n}',
+  },
+  {
     name: 'AgentSetup',
     declaration: 'export type AgentSetup = (agentCtx: Context) => AgentSetupCommit | Promise<AgentSetupCommit | void> | void;',
   },
@@ -2736,6 +2778,14 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'CancelOptions',
     declaration: 'export interface CancelOptions {\n    keepInbox?: boolean | undefined;\n}',
+  },
+  {
+    name: 'CatalogEntry',
+    declaration: 'export interface CatalogEntry {\n    readonly kind: \'skill\' | \'memory\';\n    readonly name: string;\n    readonly displayPath?: string;\n    readonly content: string;\n}',
+  },
+  {
+    name: 'CatalogRef',
+    declaration: 'export interface CatalogRef {\n    readonly kind: \'skill\' | \'memory\';\n    readonly id: string;\n}',
   },
   {
     name: 'ClientResponse',
@@ -2948,6 +2998,22 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'DirectoryRegistrationHandle',
     declaration: 'export interface DirectoryRegistrationHandle {\n    (): void;\n    replace(entries: readonly LlmConfigurableProvider[]): void;\n}',
+  },
+  {
+    name: 'DistillId',
+    declaration: 'export type DistillId = Branded<\'DistillId\'>;',
+  },
+  {
+    name: 'DistillKind',
+    declaration: 'export type DistillKind = \'skill\' | \'memory\';',
+  },
+  {
+    name: 'DistillResult',
+    declaration: 'export interface DistillResult {\n    distillId: DistillId;\n    kind: DistillKind;\n    scope: DistillScope;\n    path: string;\n    name: string;\n}',
+  },
+  {
+    name: 'DistillScope',
+    declaration: 'export type DistillScope = \'project\' | \'personal\';',
   },
   {
     name: 'Domain',
@@ -3360,6 +3426,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'ManualCompactAgentContext',
     declaration: 'export interface ManualCompactAgentContext extends CompactionAgentContext {\n    runMaintenance<T>(task: (signal: AbortSignal) => Promise<T>): Promise<T>;\n}',
+  },
+  {
+    name: 'MemoryItem',
+    declaration: 'export interface MemoryItem {\n    readonly name: string;\n    readonly displayPath: string;\n}',
   },
   {
     name: 'Message',
@@ -4024,6 +4094,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'SkillInvocationPolicy',
     declaration: 'export interface SkillInvocationPolicy {\n    readonly modelInvocable: boolean;\n    readonly userInvocable: boolean;\n}',
+  },
+  {
+    name: 'SkillItem',
+    declaration: 'export interface SkillItem {\n    readonly name: string;\n    readonly description: string;\n    readonly whenToUse?: string;\n    readonly modelInvocable: boolean;\n    readonly userInvocable: boolean;\n    readonly source: string;\n    readonly provider: string;\n}',
   },
   {
     name: 'SkillLookupOptions',
