@@ -532,6 +532,26 @@ export class SessionRuntime implements ISessions {
   }
 
   /**
+   * Rewind a session to before one user message and fork a child from that
+   * prefix, then refresh the list so the child is addressable.
+   * @param opts - source session id and the exact user-message seq to rewind to-before.
+   * @returns the child session id.
+   * @throws {SessionForkError} with the source id.
+   */
+  async rewind(opts: {
+    sessionId: SessionId
+    atSeq: number
+  }): Promise<SessionId> {
+    const result = await this.manager.rewind({
+      sessionId: opts.sessionId,
+      atSeq: Math.floor(opts.atSeq),
+    })
+    if (!result.ok) throw new SessionForkError(result.error, opts.sessionId)
+    this.projectList()
+    return result.value.sessionId
+  }
+
+  /**
    * Resolve an Agent-scoped context view (use-and-discard).
    * @param id - session id (the agent identity — 1:1 same axis).
    * @returns scoped ctx, or undefined for a session neither listed nor already scoped.

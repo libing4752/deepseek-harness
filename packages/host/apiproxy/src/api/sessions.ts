@@ -338,6 +338,17 @@ export interface SessionsApi {
   Promise<RpcResponse<{ sessionId: SessionId }>>
 
   /**
+   * Rewinds a session to before a user message and forks a child from that
+   * prefix, so the caller can re-edit and re-send the message. `atSeq` names
+   * the exact user message seq; the rewind drops that message's whole turn and
+   * everything after it, reverts the workspace files to the boundary (via a
+   * new git branch when the workspace is a git repository), and returns the
+   * child session id. A missing boundary fails with `rewind-unavailable`.
+   */
+  rewind(request: RpcRequest<{ sessionId: SessionId; atSeq: number }>):
+  Promise<RpcResponse<{ sessionId: SessionId; revertedFiles: boolean }>>
+
+  /**
    * Sends text and temporary image bytes to an ordinary session Agent after durable host admission.
    * Browser callers attach their current IANA zone;
    * the Host validates, canonicalizes, and records it on that exact user message. Omission remains

@@ -185,7 +185,7 @@ export class TestSessions implements ISessions {
   /** Calls observed on the service-level face, newest last. */
   readonly calls: {
     method: 'open' | 'openSubagent' | 'setSubagentCatalogOpen' | 'refreshSubagents'
-      | 'clear' | 'search' | 'fork'
+      | 'clear' | 'search' | 'fork' | 'rewind'
     args: unknown[]
   }[] = []
 
@@ -486,6 +486,16 @@ export class TestSessions implements ISessions {
    */
   fork(opts: { sessionId: SessionId; atSeq?: number; increaseTitle?: boolean }): Promise<SessionId> {
     this.calls.push({ method: 'fork', args: [opts] })
+    return Promise.resolve(opts.sessionId)
+  }
+
+  /**
+   * Recorded rewind stub: no child materializes (mirrors {@link fork}).
+   * @param opts - source session id and the message seq to rewind to-before.
+   * @returns the source id (no child record is created).
+   */
+  rewind(opts: { sessionId: SessionId; atSeq: number }): Promise<SessionId> {
+    this.calls.push({ method: 'rewind', args: [opts] })
     return Promise.resolve(opts.sessionId)
   }
 

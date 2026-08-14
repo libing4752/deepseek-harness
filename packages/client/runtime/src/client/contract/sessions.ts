@@ -96,6 +96,16 @@ export interface ISessions {
    */
   fork(opts: { sessionId: SessionId; atSeq?: number; increaseTitle?: boolean }): Promise<SessionId>
   /**
+   * Rewind a session to before one user message and fork a child from that
+   * prefix, so the caller can re-edit and re-send the message. The host drops
+   * the message's whole turn and everything after it, reverts workspace files
+   * to the boundary (git workspaces only), and returns the child session id.
+   * @param opts - source session id and the exact user-message seq to rewind to-before.
+   * @returns the child session id.
+   * @throws when the rewind fails or the boundary is unavailable.
+   */
+  rewind(opts: { sessionId: SessionId; atSeq: number }): Promise<SessionId>
+  /**
    * Register a per-session standard-props provider (hooks become `use<Name>`
    * selector hooks on the render side; props spread verbatim).
    * @param descriptor - static member roster plus per-session resolver.

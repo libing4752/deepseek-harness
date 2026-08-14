@@ -138,6 +138,18 @@ export const sessionForkValueSchema = z.object({
   sessionId: sessionIdSchema,
 }) satisfies z.ZodType<Wire<ResponseValue<'session.fork'>>>
 
+/** session.rewind request payload (atSeq names the user message to rewind to-before). */
+export const sessionRewindRequestSchema = z.object({
+  sessionId: sessionIdSchema,
+  atSeq: z.number().int().nonnegative(),
+}) satisfies z.ZodType<Wire<RequestPayload<'session.rewind'>>>
+
+/** session.rewind response value (the child session id and whether files were reverted). */
+export const sessionRewindValueSchema = z.object({
+  sessionId: sessionIdSchema,
+  revertedFiles: z.boolean(),
+}) satisfies z.ZodType<Wire<ResponseValue<'session.rewind'>>>
+
 /** session.history request payload (beforeSeq/maxMessages page backwards from the window tail). */
 export const sessionHistoryRequestSchema = z.object({
   sessionId: sessionIdSchema,

@@ -109,6 +109,9 @@ import {
   inspectApiRemoteSession,
 } from '@deepseek-ai/dsh-api-remotes'
 import { canOpenNativePath, openNativePath, openNativeTextFile } from './native-path-opener.ts'
+import {
+  checkpointRef, checkoutRewindBranch, isGitRepo, rewindBranchName, snapshotWorkspace,
+} from './workspace-git.ts'
 
 /** Page size when history is called without maxMessages. */
 const DEFAULT_MAX_MESSAGES = 50
@@ -1125,6 +1128,44 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
   const presetSwitches = new Map<SessionId, Promise<unknown>>()
   /** Client-chosen identity creation/resume, deduplicated across concurrent retries. */
   const sessionCreations = new Map<SessionId, Promise<Agent>>()
+  /** Per-session workspace git checkpoints: turn number → checkpoint commit promise. */
+  const workspaceCheckpoints = new Map<SessionId, {
+    cwd: string
+    gitRepo: Promise<boolean>
+    commits: Map<number, Promise<string>>
+  }>()
+
+  /**
+   * Snapshot the workspace at the start of `turn` (before its tools run) and
+   * memoize the checkpoint commit. Non-git or cwd-less sessions resolve
+   * `undefined` (no file revert). The snapshot runs eagerly at `turn/start`
+   * and finishes well before the model's first tool call; the rewind path
+   * awaits the same memoized promise, so it never reads a half-written one.
+   * @param session - live session owning the workspace.
+   * @param turn - turn number the checkpoint precedes.
+   * @returns the checkpoint commit sha, or undefined when no revert is possible.
+   */
+  async function workspaceCheckpointFor(session: Session, turn: number): Promise<string | undefined> {
+    const cwd = session.header.cwd
+    if (cwd === undefined) return undefined
+    let entry = workspaceCheckpoints.get(session.id)
+    if (entry === undefined) {
+      entry = { cwd, gitRepo: isGitRepo(cwd), commits: new Map() }
+      workspaceCheckpoints.set(session.id, entry)
+    }
+    if (!(await entry.gitRepo)) return undefined
+    const existing = entry.commits.get(turn)
+    if (existing !== undefined) return existing
+    const commit = snapshotWorkspace(cwd, checkpointRef(String(session.id)), `dsh checkpoint ${String(session.id)} turn ${turn}`)
+    entry.commits.set(turn, commit)
+    return commit
+  }
+
+  /** Read the memoized checkpoint commit for one turn, or undefined when none was recorded. */
+  async function checkpointCommitFor(sessionId: SessionId, turn: number): Promise<string | undefined> {
+    const commit = workspaceCheckpoints.get(sessionId)?.commits.get(turn)
+    return commit === undefined ? undefined : commit
+  }
   /** Serializes path ownership and explicit title checks with Workspace mutations. */
   let workspaceCreationChain = Promise.resolve()
   const pendingQuestions = new Map<RpcId, PendingQuestion>()
@@ -1352,6 +1393,16 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
     const agent = ctx.agents.get(session.id)
     if (agent?.session !== session) return
     broadcast({ type: 'session/queue', sessionId: session.id, items: queueItems(agent, event.data) })
+  })
+
+  // Workspace file checkpoints for session.rewind: each turn boundary records
+  // the working tree before that turn's tools run, so a later rewind can
+  // checkout a branch rooted at the pre-turn snapshot.
+  ctx.on('session/event', (session, event) => {
+    if (event.type !== 'turn/start') return
+    void workspaceCheckpointFor(session, event.data.turn).catch(() => {
+      // A failed snapshot must not fail the turn; rewind degrades to context-only.
+    })
   })
 
   /** Remove a wait before settling it: synchronous deletion makes the first claimant win. */
@@ -2456,6 +2507,109 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
           }
         }
         return ok(request, { sessionId: childId })
+      },
+
+      async rewind(request) {
+        const { sessionId, atSeq } = request.payload
+        let source: SessionReadState
+        try {
+          source = await readSessionState(sessionId)
+        } catch (error: unknown) {
+          if (error instanceof SessionNotFound) {
+            return err(request, { code: 'session-not-found', message: error.message, details: { sessionId } })
+          }
+          return err(request, {
+            code: 'internal',
+            message: `rewind source unavailable for session "${sessionId}": ${String(error)}`,
+            details: {},
+          })
+        }
+        const events = source.events
+        const message = events[atSeq]
+        if (message === undefined || message.type !== 'user/message') {
+          return err(request, {
+            code: 'rewind-unavailable',
+            message: atSeq >= events.length
+              ? `session "${sessionId}" has no event at seq ${atSeq}`
+              : `session "${sessionId}" event at seq ${atSeq} is not a user message`,
+            details: { sessionId },
+          })
+        }
+        const turnStart = events.slice(0, atSeq + 1).findLast(event => event.type === 'turn/start')
+        if (turnStart === undefined) {
+          return err(request, {
+            code: 'rewind-unavailable',
+            message: `session "${sessionId}" message at seq ${atSeq} has no owning turn`,
+            details: { sessionId },
+          })
+        }
+        // Keep every event before the target turn: the child seed drops the
+        // whole turn containing the rewinded message and everything after it.
+        const cut = turnStart.seq
+        const turnNumber: number = turnStart.data.turn
+
+        // Revert workspace files to the turn boundary. Only git workspaces can
+        // be reverted; others keep their files and rewind the conversation only.
+        let revertedFiles = false
+        const cwd = source.header.cwd
+        if (cwd !== undefined) {
+          const checkpoint = await checkpointCommitFor(sessionId, turnNumber)
+          if (checkpoint !== undefined) {
+            try {
+              await checkoutRewindBranch(cwd, rewindBranchName(String(sessionId)), checkpoint)
+              revertedFiles = true
+            } catch (error: unknown) {
+              ctx.logger.warn(`session.rewind: file revert failed for session "${sessionId}": ${String(error)}`)
+            }
+          }
+        }
+
+        const forkComposition = await composeAgent(resolveSessionPreset(source))
+        const childId = `session-${randomUUID()}` as SessionId
+        try {
+          await ctx.agents.create({
+            sessionId: childId,
+            seed: events.slice(0, cut),
+            meta: {
+              ...source.header.cwd === undefined ? {} : { cwd: source.header.cwd },
+              parentSession: source.id,
+              seedLength: cut,
+              ...forkComposition.agentPreset === undefined
+                ? {}
+                : { agentPreset: forkComposition.agentPreset },
+            },
+            agentOptions: agentOptions(),
+            setup: forkComposition.setup,
+          })
+        } catch (error: unknown) {
+          return err(request, {
+            code: 'internal',
+            message: `failed to rewind session "${sessionId}": ${String(error)}`,
+            details: {},
+          })
+        }
+        let workspace: Workspace | undefined
+        try {
+          workspace = await forkWorkspace(source)
+        } catch (error: unknown) {
+          return err(request, {
+            code: 'internal',
+            message: `failed to resolve rewind workspace for session "${sessionId}": ${String(error)}`,
+            details: {},
+          })
+        }
+        if (workspace !== undefined) {
+          try {
+            await workspace.attachSession(childId)
+          } catch (error: unknown) {
+            return err(request, {
+              code: 'workspace-attach-failed',
+              message: `session "${childId}" was rewound but could not attach to workspace "${workspace.id}": ${String(error)}`,
+              details: { sessionId: childId, workspaceId: workspace.id },
+            })
+          }
+        }
+        return ok(request, { sessionId: childId, revertedFiles })
       },
 
       async prompt(request) {

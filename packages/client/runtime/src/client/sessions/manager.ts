@@ -603,6 +603,39 @@ export class SessionManager {
   }
 
   /**
+   * Contract session.rewind; on success merge the child into summaries
+   * immediately (same synchronous-addressability guarantee as create/fork).
+   * The child inherits the source cwd and parent lineage and is never blank
+   * (it carries the source's prefix up to the rewind boundary).
+   * @param opts - source session and the user-message seq to rewind to-before.
+   * @returns the rewind result (the child session id).
+   */
+  async rewind(
+    opts: { sessionId: SessionId; atSeq: number },
+  ): Promise<RpcResult<{ sessionId: SessionId }>> {
+    try {
+      const source = this.summaries.find(s => s.sessionId === opts.sessionId)
+      const { result } = await this.api.sessions.rewind({
+        sessionId: opts.sessionId,
+        atSeq: opts.atSeq,
+      })
+      const childId = result.ok
+        ? result.value.sessionId
+        : workspaceAttachSessionId(result.error)
+      if (childId !== undefined) {
+        this.recordMutation({ kind: 'upsert', summary: {
+          sessionId: childId, updatedAt: Date.now(), running: false, blank: false,
+          parentSessionId: opts.sessionId,
+          ...(source?.cwd !== undefined ? { cwd: source.cwd } : {}),
+        } })
+      }
+      return result
+    } catch (error) {
+      return transportError(error)
+    }
+  }
+
+  /**
    * Insert-or-enrich a locally synthesized summary: a new id prepends; an
    * existing entry only gains fields it lacks (the session-added frame and the
    * create() echo race — whichever lands second must fill the placeholder's

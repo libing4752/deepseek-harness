@@ -421,6 +421,16 @@ export function apply(ctx: Context): void {
               // Fork or child-rename failure keeps the source view untouched.
             })
         },
+        rewindAt: (seq, text) => {
+          sessions.rewind({ sessionId, atSeq: seq })
+            .then((childId) => {
+              sessions.open(childId)
+              inputHub.shell(childId).setDraft(text)
+            })
+            .catch(() => {
+              // Rewind failure keeps the source view untouched.
+            })
+        },
       }
     },
   }, ChatView)
