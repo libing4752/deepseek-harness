@@ -6,7 +6,7 @@
 
 ## 槽位契约
 
-该插件挂载 `agentsCatalog` Remote 命名空间，并在 [`dsh-client-ui-sidebar`](../ui-sidebar/README.md) 声明的槽位里注册一个 `sidebar.footer.action` 条目（id `agents-catalog`）。触发器是宽行（「技能与记忆」）或轨道图标；选中后打开一个居中对话框。
+`agentsCatalog` Remote 命名空间通过 [`@deepseek-ai/dsh-api-remotes`](../../api/remotes/README.md) 客户端装配层挂载；本插件在 `inject` 中声明该命名空间，并在 [`dsh-client-ui-sidebar`](../ui-sidebar/README.md) 声明的槽位里注册一个 `sidebar.footer.action` 条目（id `agents-catalog`）。触发器是宽行（「技能与记忆」）或轨道图标；选中后打开一个居中对话框。
 
 对话框列出两个分组——技能与记忆——每行展示名称、副行（技能描述或记忆展示路径），以及技能所带的调用徽标（`模型/用户` / `仅模型` / `仅用户`）。选中某行会调用 `agentsCatalog.read`，用条目的完整内容替换列表，并显示返回控件。关闭路径包括头部按钮、点击遮罩与 Escape。
 

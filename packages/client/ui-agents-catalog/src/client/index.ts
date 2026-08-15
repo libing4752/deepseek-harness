@@ -1,10 +1,12 @@
 /**
- * Skills + memory catalog UI plugin, browser half: mounts the agentsCatalog
- * Remote namespace, then registers the `sidebar.footer.action` trigger row and
- * modal panel that lists the current project's skills and memory notes.
+ * Skills + memory catalog UI plugin, browser half: registers the
+ * `sidebar.footer.action` trigger row and modal panel that lists the current
+ * project's skills and memory notes. The agentsCatalog Remote namespace itself
+ * mounts through the `@deepseek-ai/dsh-api-remotes` client assembly, so this
+ * plugin only consumes it.
  */
-import agentsCatalogRemote from '@deepseek-ai/dsh-agents-catalog/remote'
-// Type-only: pulls the ctx.remote merge (TypertClientRemote) into this program.
+// Type-only: pulls the generated Remote API and ctx.remote merge (including the
+// agentsCatalog namespace) through the Client assembly boundary.
 import type {} from '@deepseek-ai/dsh-api-remotes/client'
 import type { ClientContext } from '@deepseek-ai/dsh-client-runtime/client'
 // Type-only: pulls the locale plugin's Context merge (ctx.locale).
@@ -28,18 +30,15 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
 /** Dictionary namespace owned by this plugin. */
 const NS = 'agentsCatalog'
 
-/** Required services: the remote carrier, the slot registry, and the locale registry. */
-export const inject = ['remote', 'slots', 'locale']
+/** Required services: the remote carrier and its agentsCatalog namespace, the slot registry, and the locale registry. */
+export const inject = ['remote', 'remote.agentsCatalog', 'slots', 'locale']
 
 /**
- * Mount the catalog Remote, then register the footer action once its slot is
- * declared by ui-sidebar.
+ * Register the footer action once its slot is declared by ui-sidebar.
  * @param ctx - client root context.
- * @returns disposer that unmounts the catalog Remote namespace.
  */
-export async function apply(ctx: ClientContext): Promise<() => Promise<void>> {
+export function apply(ctx: ClientContext): void {
   ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'ui-agents-catalog: dictionaries')
-  const disposeMount = await ctx.remote.$mount(agentsCatalogRemote)
   ctx.slots.inject('sidebar.footer.action', () => ctx.slots.register({
     name: 'sidebar.footer.action',
     id: 'agents-catalog',
@@ -50,5 +49,4 @@ export async function apply(ctx: ClientContext): Promise<() => Promise<void>> {
       read: (sessionId, ref, signal) => ctx.remote.agentsCatalog.read(sessionId, ref, signal),
     }),
   }, CatalogPanel))
-  return disposeMount
 }

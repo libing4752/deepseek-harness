@@ -6,7 +6,7 @@ Browser half of the skills + memory catalog: a sidebar-foot trigger and modal pa
 
 ## Slot contract
 
-The plugin mounts the `agentsCatalog` Remote namespace and registers one `sidebar.footer.action` entry (id `agents-catalog`) into the slot declared by [`dsh-client-ui-sidebar`](../ui-sidebar/README.md). The trigger is a wide row ("Skills & memory") or a rail icon; selecting it opens a centered dialog.
+The `agentsCatalog` Remote namespace mounts through the [`@deepseek-ai/dsh-api-remotes`](../../api/remotes/README.md) client assembly; this plugin declares that namespace in `inject` and registers one `sidebar.footer.action` entry (id `agents-catalog`) into the slot declared by [`dsh-client-ui-sidebar`](../ui-sidebar/README.md). The trigger is a wide row ("Skills & memory") or a rail icon; selecting it opens a centered dialog.
 
 The dialog lists two groups — Skills and Memory — each row showing the name, a secondary line (skill description or memory display path), and, for skills, an invocation badge (`model/user`/`model only`/`user only`). Selecting a row calls `agentsCatalog.read` and replaces the list with the entry's full content plus a back control. Close paths are the header button, a mask click, and Escape.
 

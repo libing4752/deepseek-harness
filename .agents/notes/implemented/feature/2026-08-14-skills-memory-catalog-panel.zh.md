@@ -13,9 +13,9 @@ Web GUI 只把技能与记忆作为模型可见面暴露：`skill` 工具把技�
 侧栏底部新增一个只读的「技能与记忆」面板，由两个挂入 `dsh-web-app` bundle 的增量包实现：
 
 - `@deepseek-ai/dsh-agents-catalog`（宿主，`packages/host/agents-catalog`）——一个 `TypertRemoteService`，注册 `ctx.agentsCatalog` 与 `agentsCatalog` Remote 命名空间。`list(agent, signal)` 返回技能摘要与记忆笔记行；`read(agent, ref, signal)` 返回一条条目的完整内容。技能查找与 apiproxy 的 `skill.list` 处理器完全一致地解析注册表（`presets.serviceFor(agent, 'skills') ?? ctx.get('skills')`，scope 为当前 agent），记忆发现读取项目 `.agents/memory/` 与用户 `~/.agents/memory/` 文件。
-- `@deepseek-ai/dsh-client-ui-agents-catalog`（客户端，`packages/client/ui-agents-catalog`）——在自己的 `apply` 里挂载 `agentsCatalog` Remote 贡献，并注册一个渲染触发器与模态的 `sidebar.footer.action` 条目。
+- `@deepseek-ai/dsh-client-ui-agents-catalog`（客户端，`packages/client/ui-agents-catalog`）——在 `inject` 中声明 `agentsCatalog` Remote 命名空间，并注册一个渲染触发器与模态的 `sidebar.footer.action` 条目。
 
-客户端在自己的 `apply` 里挂载 Remote 贡献（`ctx.remote.$mount(agentsCatalogRemote)`），而不是把命名空间加进 `@deepseek-ai/dsh-api-remotes` 装配，从而把改动局限在两个新包内、不编辑共享的客户端装配。
+`agentsCatalog` Remote 命名空间通过 `@deepseek-ai/dsh-api-remotes` 客户端装配层挂载。这推翻了早先「在插件自己的 `apply` 里自行挂载」的做法——后者会让启动死锁，见[修复笔记](../bug-fix/2026-08-15-remote-namespace-self-mount-inject-deadlock.md)。
 
 ## Alternatives considered
 
@@ -36,7 +36,7 @@ Settings 拥有用户偏好及其自身的导航/分节机制。目录是项目�
 - **记忆发现重复了 `dsh-memory` 的文件遍历。** 两个加载器共享同样的作用域与排序规则但不共享代码；未来的 `dsh-memory` list/read 服务会是合并点。
 - **面板在打开时快照。** 会话进行中写入的技能或记忆笔记不会被推送；面板在重开时重读。
 - **技能正文按需加载。** `list` 只返回摘要，因此面板每打开一条条目发起一次 `read`，而不是预先下发全部正文。
-- **Typert Remote 模式为 UI 自有的宿主服务做了示范。** 叶子宿主包可以暴露新的读取面并让客户端挂载它，而不改变 apiproxy 桶或 `api/remotes` 装配。
+- **Typert Remote 模式为 UI 自有的宿主服务做了示范。** 叶子宿主包暴露新的读取面；其 `/remote` 贡献通过共享的 `api/remotes` 装配挂载，客户端插件则声明并读取该命名空间。
 
 ## Testing
 

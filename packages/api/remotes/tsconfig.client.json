@@ -34,6 +34,12 @@
       "path": "../../feedback/message-feedback"
     },
     {
+      "path": "../../host/agents-catalog"
+    },
+    {
+      "path": "../../host/git-workspace"
+    },
+    {
       "path": "../../host/plugin-inventory"
     },
     {

@@ -13,9 +13,9 @@ The Web GUI exposes skills and memory only as model-facing surfaces: the `skill`
 A read-only "Skills & memory" panel lives in the sidebar foot. It is two additive packages wired into the `dsh-web-app` bundle:
 
 - `@deepseek-ai/dsh-agents-catalog` (host, `packages/host/agents-catalog`) — a `TypertRemoteService` registering `ctx.agentsCatalog` and the `agentsCatalog` Remote namespace. `list(agent, signal)` returns skill summaries and memory note rows; `read(agent, ref, signal)` returns one entry's full content. Skill lookup resolves the registry exactly like the apiproxy `skill.list` handler (`presets.serviceFor(agent, 'skills') ?? ctx.get('skills')`, scope = the live agent), and memory discovery reads the project `.agents/memory/` plus the user `~/.agents/memory/` files.
-- `@deepseek-ai/dsh-client-ui-agents-catalog` (client, `packages/client/ui-agents-catalog`) — mounts the `agentsCatalog` Remote contribution in its own `apply` and registers one `sidebar.footer.action` entry that renders the trigger and modal.
+- `@deepseek-ai/dsh-client-ui-agents-catalog` (client, `packages/client/ui-agents-catalog`) — declares the `agentsCatalog` Remote namespace in `inject` and registers one `sidebar.footer.action` entry that renders the trigger and modal.
 
-The client mounts its own Remote contribution (`ctx.remote.$mount(agentsCatalogRemote)`) rather than adding the namespace to the `@deepseek-ai/dsh-api-remotes` assembly, which keeps the addition confined to the two new packages and does not edit the shared client assembly.
+The `agentsCatalog` Remote namespace mounts through the `@deepseek-ai/dsh-api-remotes` client assembly. This reverses an earlier self-mount in the plugin's own `apply`, which deadlocked boot — see [the fix note](../bug-fix/2026-08-15-remote-namespace-self-mount-inject-deadlock.md).
 
 ## Alternatives considered
 
@@ -36,7 +36,7 @@ Settings owns user preferences and its own nav/section machinery. The catalog is
 - **Memory discovery duplicates `dsh-memory`'s file walk.** The two loaders share the same scope and sort rules but no code; a future `dsh-memory` list/read service would be the consolidation point.
 - **The panel snapshots on open.** A skill or memory note written mid-session is not pushed; the panel re-reads on reopen.
 - **Skill bodies load on demand.** `list` returns summaries only, so the panel issues one `read` per opened entry rather than shipping every body up front.
-- **The Typert Remote pattern is demonstrated for a UI-owned host service.** A leaf host package can expose new read surface and have the client mount it, without the apiproxy barrel or the `api/remotes` assembly changing.
+- **The Typert Remote pattern is demonstrated for a UI-owned host service.** A leaf host package exposes new read surface; its `/remote` contribution mounts through the shared `api/remotes` assembly and the client plugin declares and reads the namespace.
 
 ## Testing
 
