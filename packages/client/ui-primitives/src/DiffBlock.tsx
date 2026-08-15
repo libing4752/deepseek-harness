@@ -174,12 +174,17 @@ function normalizeOps(chunks: ReturnType<typeof diffLines>): NormalizedOp[] {
   const ops: NormalizedOp[] = []
   for (let i = 0; i < chunks.length; i++) {
     const chunk = chunks[i]
+    /* v8 ignore next -- noUncheckedIndexedAccess guard; the loop bound keeps chunk defined */
+    if (chunk === undefined) continue
     const lines = contentLines(chunk.value)
-    if (chunk.removed && chunks[i + 1]?.added) {
-      ops.push({ kind: 'mod', left: lines, right: contentLines(chunks[i + 1].value) })
-      i += 1
-    } else if (chunk.removed) {
-      ops.push({ kind: 'del', left: lines, right: [] })
+    if (chunk.removed) {
+      const next = chunks[i + 1]
+      if (next?.added) {
+        ops.push({ kind: 'mod', left: lines, right: contentLines(next.value) })
+        i += 1
+      } else {
+        ops.push({ kind: 'del', left: lines, right: [] })
+      }
     } else if (chunk.added) {
       ops.push({ kind: 'add', left: [], right: lines })
     } else {
@@ -355,7 +360,7 @@ function SplitRowView({ row }: { row: SplitFlatRow }) {
   const leftChanged = row.change === 'del' || row.change === 'mod'
   const rightChanged = row.change === 'add' || row.change === 'mod'
   return (
-    <tr className={css.splitRow} data-role={row.change}>
+    <tr data-role={row.change}>
       <td className={clsx(css.gutter, leftChanged && css.removed)} data-gutter="left" aria-hidden>{row.left?.number ?? ''}</td>
       <td className={clsx(css.cell, leftChanged && css.removed)} data-side="left">{row.left === null ? '' : cellBody(row.left)}</td>
       <td className={clsx(css.gutter, rightChanged && css.added)} data-gutter="right" aria-hidden>{row.right?.number ?? ''}</td>
@@ -423,7 +428,7 @@ export function DiffBlock({ diffs, maxLines = DEFAULT_DIFF_MAX_LINES, className 
   const onSplit = useCallback(() => { setMode('split') }, [])
   const onInline = useCallback(() => { setMode('inline') }, [])
 
-  if (rows.length === 0) return null
+  if (model.split.length === 0) return null
 
   const hidden = rows.length - maxLines
   const capped = hidden > 0 && !expanded
@@ -431,28 +436,31 @@ export function DiffBlock({ diffs, maxLines = DEFAULT_DIFF_MAX_LINES, className 
   // card, so a body's head and tail slices agree across the front ends.
   const headLines = Math.ceil(maxLines / 2)
   const tailLines = maxLines - headLines
-  const head = capped ? rows.slice(0, headLines) : rows
-  const tail = capped ? rows.slice(rows.length - tailLines) : []
+  // Slice each view's own rows so the branch below maps a narrowed array.
+  const splitHead = capped ? model.split.slice(0, headLines) : model.split
+  const splitTail = capped ? model.split.slice(model.split.length - tailLines) : []
+  const inlineHead = capped ? model.inline.slice(0, headLines) : model.inline
+  const inlineTail = capped ? model.inline.slice(model.inline.length - tailLines) : []
 
   const body = mode === 'split'
     ? (
       <table className={css.splitTable}>
         <tbody>
-          {head.map((row, index) => <SplitRowView key={index} row={row} />)}
+          {splitHead.map((row, index) => <SplitRowView key={index} row={row} />)}
           {hidden > 0 && (
             <tr className={css.expandRow}>
               <td colSpan={4}><ExpandControl hidden={hidden} expanded={expanded} onToggle={onToggle} /></td>
             </tr>
           )}
-          {tail.map((row, index) => <SplitRowView key={`tail-${index}`} row={row} />)}
+          {splitTail.map((row, index) => <SplitRowView key={`tail-${index}`} row={row} />)}
         </tbody>
       </table>
     )
     : (
       <>
-        {head.map((row, index) => <InlineRowView key={index} row={row} />)}
+        {inlineHead.map((row, index) => <InlineRowView key={index} row={row} />)}
         {hidden > 0 && <ExpandControl hidden={hidden} expanded={expanded} onToggle={onToggle} />}
-        {tail.map((row, index) => <InlineRowView key={`tail-${index}`} row={row} />)}
+        {inlineTail.map((row, index) => <InlineRowView key={`tail-${index}`} row={row} />)}
       </>
     )
 

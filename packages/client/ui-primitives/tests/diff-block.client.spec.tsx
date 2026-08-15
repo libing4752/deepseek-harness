@@ -23,7 +23,7 @@ beforeEach(() => {
 })
 
 /** The change rows bearing a given role (`add`/`del`/`mod`/`ctx`). */
-function roleRows(container: HTMLElement, role: string): HTMLElement[] {
+function roleRows(container: HTMLElement, role: string): Element[] {
   return [...container.querySelectorAll(`[data-role="${role}"]`)]
 }
 
@@ -138,6 +138,20 @@ describe('DiffBlock side-by-side structure', () => {
     const { container } = render(<DiffBlock diffs={[{ path: 'a.txt', oldText: null, newText: 'x\n\ny' }]} />)
     expect(roleRows(container, 'add')).toHaveLength(3)
   })
+
+  it('pads the shorter left side of an uneven modification', () => {
+    const { container } = render(<DiffBlock diffs={[{ path: 'a.txt', oldText: 'a', newText: 'x\ny' }]} />)
+    expect(sideTexts(container, 'left')).toEqual(['a', ''])
+    expect(sideTexts(container, 'right')).toEqual(['x', 'y'])
+    expect(screen.getByText('└ +2 -1 · 1 file')).toBeTruthy()
+  })
+
+  it('pads the shorter right side of an uneven modification', () => {
+    const { container } = render(<DiffBlock diffs={[{ path: 'a.txt', oldText: 'a\nb', newText: 'x' }]} />)
+    expect(sideTexts(container, 'left')).toEqual(['a', 'b'])
+    expect(sideTexts(container, 'right')).toEqual(['x', ''])
+    expect(screen.getByText('└ +1 -2 · 1 file')).toBeTruthy()
+  })
 })
 
 describe('DiffBlock toggle and inline view', () => {
@@ -162,6 +176,31 @@ describe('DiffBlock toggle and inline view', () => {
     expect(roleRows(container, 'ctx')).toHaveLength(2)
     expect(roleRows(container, 'del')).toHaveLength(1)
     expect(roleRows(container, 'add')).toHaveLength(1)
+  })
+
+  it('renders the inline gap separator for a same-file second hunk', () => {
+    const { container } = render(
+      <DiffBlock diffs={[{ path: 'a.txt', oldText: 'x', newText: 'y' }, { path: 'a.txt', oldText: 'p', newText: 'q' }]} />,
+    )
+    fireEvent.click(screen.getByRole('button', { name: '行内' }))
+    expect([...container.querySelectorAll('[class*="_gap_"]')]).toHaveLength(1)
+    expect([...container.querySelectorAll('[class*="_path_"]')]).toHaveLength(1)
+  })
+
+  it('highlights inline-mode code lines for a known extension', () => {
+    const { container } = render(<DiffBlock diffs={[{ path: 'a.ts', oldText: 'const a = 1', newText: 'const b = 2' }]} />)
+    fireEvent.click(screen.getByRole('button', { name: '行内' }))
+    expect(container.querySelectorAll('[class*="_content_"] span[style]').length).toBeGreaterThan(1)
+  })
+
+  it('caps and expands the inline view', () => {
+    const { container } = render(<DiffBlock diffs={[{ path: 'a.txt', oldText: null, newText: added(10) }]} maxLines={4} />)
+    fireEvent.click(screen.getByRole('button', { name: '行内' }))
+    const toggle = screen.getByRole('button', { name: '展开其余 7 行差异' })
+    expect(toggle.getAttribute('aria-expanded')).toBe('false')
+    fireEvent.click(toggle)
+    expect(screen.getByRole('button', { name: '收起差异' })).toBeTruthy()
+    expect(roleRows(container, 'add')).toHaveLength(10)
   })
 })
 

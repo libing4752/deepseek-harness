@@ -19,10 +19,10 @@ Web 客户端忽略了它。write/edit 调用落到 `GenericToolCard`，其行�
 该组件与 TUI 共用单栏框架、行终止符规则和去重路径计数。两者的行分类不同：Web 渲染完整的变更前后两侧，而 TUI 会在有界比较完成时派生中性上下文和精确变更行，并把整侧回退标记为近似结果。
 
 - **路径分组。** 新文件开启一个粗体路径头；同文件的第二个 hunk（分散编辑，或 `replace_all`）以一个 `⋯` gap 开启，而非重复路径。TUI 在每个 hunk 上都保留路径头，但两个前端的 `N file(s)` 页脚都按去重路径计数，因此同文件两个 hunk 在两端都读作 `1 file`。
-- **整侧改动配色。** 旧侧每一行都以 error token 上的 `- ` 显示，新侧每一行都以 success token 上的 `+ ` 显示，并在横向滚动的盒子里以 `white-space: pre` 逐字绘制：源码行靠缩进阅读，因此滚动而不折行。新建（`oldText: null`）没有删除侧。
+- **改动渲染。** 卡片现在渲染行级对齐的 diff —— 默认并排、可切换行内统一视图 —— 带按 hunk 的行号、改动行着色与语法高亮；见 [并排 diff 卡片](2026-08-14-side-by-side-diff-card.md)。行仍以 `white-space: pre` 在横向滚动盒子里逐字绘制：源码行靠缩进阅读，因此滚动而不折行。新建（`oldText: null`）没有删除侧。
 - **高度上限带展开控件。** 长于 `DEFAULT_DIFF_MAX_LINES`（16）的 diff 显示 `ceil(max/2)` 个头部行加剩余尾部行，中间一个按钮报告隐藏行数。分割算术与 `TerminalBlock` 和 TUI 的折叠卡片一致，因此长 diff 的头尾切片在两个前端一致。
 - **行终止符。** 每一侧的内容按 `TerminalBlock` 与 TUI 共用的终止符规则在 `\n` 上切分：空文本是零行（整文件删除的 `newText`、新建缺失的 `oldText` 侧），单个结尾换行终止其最后一行而非新增一条幻影空行，内部空行保留。
-- **页脚与复制。** 暗色 `└ +A -R · N file(s)` 页脚报告 Web 卡片完整新侧与旧侧的行数。TUI 页脚则在可用时报告精确变更行数，并把有界整侧回退标记为近似结果；两者使用相同的去重路径计数。复制控件复制带前缀的 Web diff 文本（路径头、`- `/`+ ` 行、`⋯` gap），使多文件复制保持可辨别归属。
+- **页脚与复制。** 暗色 `└ +A -R · N file(s)` 页脚报告真正的增删行数（卡片对齐上下文后排除上下文行）。TUI 页脚则在可用时报告精确变更行数，并把有界整侧回退标记为近似结果；两者使用相同的去重路径计数。复制控件写入统一 diff 文本（路径头、` `/`- `/`+ ` 行、`⋯` gap），使多文件复制保持可辨别归属。
 
 几何、圆角、字体镜像 `CodeBlock`/`TerminalBlock`，使 diff 卡片、terminal 卡片、代码块读起来是一家；`white-space: pre` 加横向滚动是刻意的分歧。复制控件浮在卡片右上角，而非占据自己的 banner 行，因为只放一个复制按钮的 banner 会在第一行 diff 上方画出一条空带 —— TUI 的 diff 卡片也没有 banner，只有页脚。
 
@@ -30,15 +30,15 @@ chat 行把 diff 常驻渲染在路径链接摘要之下，上限 `CHAT_DIFF_MAX
 
 ## Alternatives considered
 
-**并排（双栏）diff。** owner 目前拒绝：它更密但不适合狭窄的 chat 行，目标是与 TUI 单栏统一形式对齐。详情面板里的双栏模式是后续的 props 改动，不是重设计。
+**并排（双栏）diff。** owner 起初因不适合狭窄的 chat 行、且打破与 TUI 单栏形式的对齐而拒绝。它后来作为 [并排 diff 卡片](2026-08-14-side-by-side-diff-card.md) 的默认视图发布；chat 行仍以上限 `CHAT_DIFF_MAX_LINES` 截断，因此更密的两栏布局适配流内。
 
-**git 式行号槽。** `FileDiff` 约定只携带 `{ path, oldText, newText }` —— `structuredPatch` 的 hunk 起始行在 `diff.ts` 里被丢弃，所以没有行号抵达客户端。渲染行号槽需要后端约定改动（携带 `oldStart`/`newStart`）并同步升级 TUI 以保持一致；推迟，使本变更保持为对既有约定的纯 Web 消费。
+**git 式行号槽。** `FileDiff` 约定仍只携带 `{ path, oldText, newText }` —— `structuredPatch` 的 hunk 起始行在 `diff.ts` 里被丢弃，所以没有绝对行号抵达客户端。[并排 diff 卡片](2026-08-14-side-by-side-diff-card.md) 后来在不改约定的情况下加入了按 hunk 的 1 起编号；绝对行号仍需后端改动（携带 `oldStart`/`newStart`）并同步升级 TUI。
 
 **复用 `CodeBlock`。** 因与 terminal 卡片相同的理由拒绝：`CodeBlock` 会折行，且没有每行 `+`/`-` 角色、没有路径头、没有页脚。两者共享几何与字体 token，那是唯一一处一个实现对两者都正确的部分。
 
 ## Consequences
 
-`DiffBlock` 只读 diff view 的字段，因此它是渲染意图所携带内容的纯函数 —— 与产出该视图的 presenter 一样回放安全。没有 diff 能力的 UI 仍得到 bridge 的通用回退；工具的 result 形状没有任何改变。无新增运行时依赖：不同于 terminal 卡片的 `anser`，diff 不需要解析器。
+`DiffBlock` 只读 diff view 的字段，因此它是渲染意图所携带内容的纯函数 —— 与产出该视图的 presenter 一样回放安全。没有 diff 能力的 UI 仍得到 bridge 的通用回退；工具的 result 形状没有任何改变。`diff` 运行时依赖由 [并排 diff 卡片](2026-08-14-side-by-side-diff-card.md) 后来加入，用于在客户端重新对齐 hunk。
 
 `DiffBlock` 的多文件支路（一张卡、多个路径头）今天没有生产者：`write`/`edit` 每次调用各改一个文件，所以真实卡片显示一个文件带一个或多个 hunk。该支路为将来的多文件改动工具而构建并测试，不是为当前消费者。
 
@@ -53,5 +53,6 @@ fixture（`packages/client/connection/src/client/fixture.ts`）携带三个 diff
 ## Related
 
 - [Web terminal 卡片](2026-07-28-web-terminal-card.md) —— `terminal` 支路的同一套四层结构；本 note 复用其内联输出决策与头尾上限算术。
+- [并排 diff 卡片](2026-08-14-side-by-side-diff-card.md) —— 当前的 `DiffBlock` 渲染（默认并排 + 行内切换），取代了本 note 的整侧配色与页脚计数。
 - [工具调用呈现的标签化 render-intent union](../architecture/2026-07-02-tool-render-intent-union.md) —— 本改动消费的 `card` 标签词汇；Web 客户端现在也是 `diff` 支路的消费者。
 - [Web 客户端架构](../architecture/2026-07-19-gui-web-client-architecture.md) —— 两个渲染点所处的 slot 与快照分层。

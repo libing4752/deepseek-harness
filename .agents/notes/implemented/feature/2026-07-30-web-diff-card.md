@@ -19,10 +19,10 @@ This is the [terminal card](2026-07-28-web-terminal-card.md) done for the `diff`
 The component shares the TUI's single-column framing, line-terminator rule, and distinct-path file count. Line classification differs: Web renders the complete old and new sides, while the TUI derives neutral context and exact changed rows when its bounded comparison completes and labels its whole-side fallback approximate.
 
 - **Path grouping.** A new file opens a bold path header; a same-file second hunk (a scattered edit, or a `replace_all`) opens with a `⋯` gap instead of repeating the path. The TUI keeps a path header on every hunk, but both front ends count distinct paths in the `N file(s)` footer, so two hunks in one file read as `1 file`.
-- **Whole-side change colors.** Every old-side line is `- ` on the error token and every new-side line is `+ ` on the success token, drawn verbatim with `white-space: pre` inside a horizontally scrolling box — a source line is read by its indentation, so it scrolls rather than folds. A create (`oldText: null`) has no removed side.
+- **Change rendering.** The card renders a line-aligned diff — side-by-side by default, inline unified on a toggle — with per-hunk line numbers, changed-line tinting, and syntax highlighting; see the [side-by-side diff card](2026-08-14-side-by-side-diff-card.md). Lines stay verbatim with `white-space: pre` inside a horizontally scrolling box — a source line is read by its indentation, so it scrolls rather than folds. A create (`oldText: null`) has no removed side.
 - **Height cap with an expand control.** A diff longer than `DEFAULT_DIFF_MAX_LINES` (16) shows `ceil(max/2)` head rows plus the remaining tail rows, with a button between reporting the hidden count. The split arithmetic matches `TerminalBlock` and the TUI's collapsed card, so a long diff's head and tail slices agree across front ends.
 - **Line terminator.** A side's content splits on `\n` under the terminator rule `TerminalBlock` and the TUI use: empty text is zero lines (a full deletion's `newText`, a create's absent `oldText` side), a single trailing newline terminates its last line rather than adding a phantom empty one, and an interior blank line survives.
-- **Footer and copy.** A dim `└ +A -R · N file(s)` footer reports the Web card's complete new- and old-side line counts. The TUI footer instead reports exact changed rows when available and marks a bounded whole-side fallback approximate; both use the same distinct-path file count. The copy control copies the prefixed Web diff text (path headers, `- `/`+ ` lines, the `⋯` gap), so a multi-file copy stays attributable.
+- **Footer and copy.** A dim `└ +A -R · N file(s)` footer reports genuine added/removed lines (context excluded once the card aligns context). The TUI footer instead reports exact changed rows when available and marks a bounded whole-side fallback approximate; both use the same distinct-path file count. The copy control writes the unified diff text (path headers, ` `/`- `/`+ ` lines, the `⋯` gap), so a multi-file copy stays attributable.
 
 Geometry, radius, and fonts mirror `CodeBlock`/`TerminalBlock` so a diff card, a terminal card, and a fenced block read as one family; `white-space: pre` plus horizontal scroll is the deliberate divergence. The copy control floats in the card's top-right corner rather than on a banner row of its own, because a banner carrying only a copy button drew an empty band above the first diff line — the TUI diff card has no banner either, only the footer.
 
@@ -30,15 +30,15 @@ The chat row renders the diff resident under its path-link summary, capped at `C
 
 ## Alternatives considered
 
-**A side-by-side (two-column) diff.** Rejected for now by the owner: it is denser but does not fit the narrow chat row, and the goal was parity with the TUI's single-column unified form. A two-column mode in the details panel is a later props change, not a redesign.
+**A side-by-side (two-column) diff.** Originally rejected by the owner for not fitting the narrow chat row and for breaking parity with the TUI's single-column form. It later shipped as the default view in the [side-by-side diff card](2026-08-14-side-by-side-diff-card.md); the chat row still caps to `CHAT_DIFF_MAX_LINES`, so the denser two-column layout fits the flow.
 
-**Git-style line-number gutters.** The `FileDiff` contract carries only `{ path, oldText, newText }` — `structuredPatch`'s hunk start lines are dropped in `diff.ts`, so no line number reaches the client. Rendering a numbered gutter needs a backend contract change (carry `oldStart`/`newStart`) and a matching TUI upgrade to stay consistent; deferred so this change stays a pure Web consumer of the existing contract.
+**Git-style line-number gutters.** The `FileDiff` contract still carries only `{ path, oldText, newText }` — `structuredPatch`'s hunk start lines are dropped in `diff.ts`, so no absolute line number reaches the client. The [side-by-side diff card](2026-08-14-side-by-side-diff-card.md) later added per-hunk 1-based numbers without a contract change; absolute numbers still need a backend change (carry `oldStart`/`newStart`) and a matching TUI upgrade.
 
 **Reuse `CodeBlock`.** Rejected for the same reason the terminal card was: `CodeBlock` soft-wraps and has no per-line `+`/`-` role, no path headers, and no footer. The two share geometry and font tokens, which is the only part where one implementation is correct for both.
 
 ## Consequences
 
-`DiffBlock` reads only the diff view's fields, so it stays a pure function of what the render intent carries — replay-safe like the presenters that produce the view. A UI without the diff capability still gets the bridge's generic fallback; nothing about the tool's result shape changed. No new runtime dependency: unlike the terminal card's `anser`, a diff needs no parser.
+`DiffBlock` reads only the diff view's fields, so it stays a pure function of what the render intent carries — replay-safe like the presenters that produce the view. A UI without the diff capability still gets the bridge's generic fallback; nothing about the tool's result shape changed. The `diff` runtime dependency was later added by the [side-by-side diff card](2026-08-14-side-by-side-diff-card.md) to re-align the hunks client-side.
 
 The multi-file arm of `DiffBlock` (one card, several path headers) has no producer today: `write`/`edit` each mutate one file per call, so a real card shows one file with one or more hunks. The arm is built and tested for a future multi-file mutation tool, not for a current consumer.
 
@@ -53,5 +53,6 @@ The fixture (`packages/client/connection/src/client/fixture.ts`) carries three d
 ## Related
 
 - [Web terminal card](2026-07-28-web-terminal-card.md) — the same four-layer shape for the `terminal` arm; this note reuses its inline-output decision and its head/tail cap arithmetic.
+- [Side-by-side diff card](2026-08-14-side-by-side-diff-card.md) — the current `DiffBlock` rendering (side-by-side default + inline toggle), which supersedes this note's whole-side coloring and footer counting.
 - [Tagged render-intent union for tool-call presentation](../architecture/2026-07-02-tool-render-intent-union.md) — the `card`-tagged vocabulary this consumes; the Web client is now a consumer of the `diff` arm too.
 - [Web client architecture](../architecture/2026-07-19-gui-web-client-architecture.md) — the slot and snapshot layering the two render sites sit in.
