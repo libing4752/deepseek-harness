@@ -8,6 +8,7 @@ export type AgentPresetSettingsKey =
   | 'presetCodeName' | 'presetCodeDescription'
   | 'presetMinimalName' | 'presetMinimalDescription'
   | 'presetCordisName' | 'presetCordisDescription'
+  | 'presetQuantName' | 'presetQuantDescription'
   | 'duplicate' | 'duplicateUnavailable' | 'delete' | 'presetId' | 'presetIdPlaceholder' | 'copyOf'
   | 'displayName' | 'displayNamePlaceholder'
   | 'inUse' | 'noDescription' | 'builtInGroup' | 'customGroup'
@@ -46,6 +47,9 @@ export const en: Record<AgentPresetSettingsKey, string> = {
   presetCordisName: 'Creator mode',
   presetCordisDescription:
     'Built for creating custom agent presets, with all Standard mode capabilities plus runtime inspection, plugin experiments, and preset-authoring guidance.',
+  presetQuantName: 'Quant mode',
+  presetQuantDescription:
+    'Quantitative strategy and framework optimization expert: rigorous mathematical reasoning, a staged quant research workflow, and web research for math and quant algorithms.',
   duplicate: 'Duplicate',
   duplicateUnavailable: 'This deployment has no writable preset directory',
   delete: 'Delete',
@@ -106,6 +110,8 @@ export const zh: Record<AgentPresetSettingsKey, string> = {
   presetMinimalDescription: '仅提供持久 bash 与 str_replace_editor 的双工具编码 Agent。',
   presetCordisName: '创造模式',
   presetCordisDescription: '用于创建自定义 Agent preset：具备标准模式的全部能力，并提供运行时检查、插件实验和 preset 创作指导。',
+  presetQuantName: '量化专家模式',
+  presetQuantDescription: '面向股票量化策略与量化框架优化的专家 Agent：严谨的数理逻辑、按量化研发流程推进、联网学习数学与量化算法、自动沉淀经验持续进化。',
   duplicate: '复制',
   duplicateUnavailable: '此部署未配置可写的预设目录',
   delete: '删除',
@@ -171,6 +177,7 @@ const BUILT_IN_PRESET_KEYS: Readonly<Partial<Record<string, PresetLocaleKeys>>> 
   code: { name: 'presetCodeName', description: 'presetCodeDescription' },
   minimal: { name: 'presetMinimalName', description: 'presetMinimalDescription' },
   cordis: { name: 'presetCordisName', description: 'presetCordisDescription' },
+  quant: { name: 'presetQuantName', description: 'presetQuantDescription' },
 }
 
 /**

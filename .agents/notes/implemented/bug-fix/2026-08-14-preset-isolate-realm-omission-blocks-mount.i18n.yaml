@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
+# side as of the last confirmed-consistent state. Both languages carry equal authority;
+# after editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/bug-fix/2026-08-14-preset-isolate-realm-omission-blocks-mount.md
+2026-08-14-preset-isolate-realm-omission-blocks-mount.md: 6f86e8df83d354889f5846578792ba68e0ed6f6d
+2026-08-14-preset-isolate-realm-omission-blocks-mount.zh.md: bb1b190e4485096755fc49cdf0e8c846992a98a8

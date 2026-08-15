@@ -187,7 +187,7 @@ describe('the shipped Web composition', () => {
   it('supplies both shipped presets, and only those, from the system root', async () => {
     const listed = await ctx.agentPresets.list()
 
-    expect(listed.map(preset => preset.id).sort()).toEqual(['code', 'cordis', 'minimal', 'standard'])
+    expect(listed.map(preset => preset.id).sort()).toEqual(['code', 'cordis', 'minimal', 'quant', 'standard'])
     expect(listed.every(preset => preset.trust === 'system')).toBe(true)
     expect(ctx.agentPresets.defaultId).toBe('standard')
   })
@@ -209,6 +209,29 @@ describe('the shipped Web composition', () => {
         'subagent', 'subagent_fork', 'todo_write', 'update_goal', 'web_search',
         'workflow', 'write',
       ])
+    } finally {
+      await handle.dispose()
+    }
+  })
+
+  it('composes the quant agent from `quant`, including web_fetch', async () => {
+    const handle = await ctx.agents.create({
+      sessionId: SessionId('preset-quant'),
+      setup: agentCtx => ctx.agentPresets.mount(agentCtx, 'quant').then(() => undefined),
+    })
+    try {
+      // `quant` is the standard agent plus full-text web fetch. A regression
+      // that drops `distill` from its compaction realm is rejected at mount —
+      // the `create` above would throw — so composing at all proves the realm.
+      const tools = toolNames(ctx, handle.agent)
+      expect(tools).toEqual(expect.arrayContaining(['bash', 'web_search', 'web_fetch']))
+      expect(tools).not.toContain('str_replace_editor')
+      // The quant persona is a self-evolving agent: it must guide the model to
+      // accumulate both experience and reusable methods/processes into skills.
+      const persona = (await ctx.systemPrompt.assemble({ scope: handle.agent }))
+        .sections.find(section => section.name === 'deployment:persona')?.text ?? ''
+      expect(persona).toContain('方法与流程')
+      expect(persona).toContain('逐步积累')
     } finally {
       await handle.dispose()
     }

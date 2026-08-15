@@ -61,6 +61,16 @@
       - 'button "复制: 创造模式"':
         - img
         - text: 复制
+    - listitem:
+      - 'button "设为默认: 量化专家模式"':
+        - text: 量化专家模式 内置 面向股票量化策略与量化框架优化的专家 Agent：严谨的数理逻辑、按量化研发流程推进、联网学习数学与量化算法、自动沉淀经验持续进化。
+        - code: quant
+      - 'button "查看: 量化专家模式"':
+        - img
+        - text: 查看
+      - 'button "复制: 量化专家模式"':
+        - img
+        - text: 复制
   - heading "自定义" [level=3]
   - list:
     - listitem:
