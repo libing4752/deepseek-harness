@@ -85,6 +85,25 @@ async function upgrade(port: number, path: string): Promise<ReturnType<typeof co
   return socket
 }
 
+/** Open one raw upgrade request and return the server's first response bytes, without asserting a 101. */
+async function rawUpgrade(port: number, path: string): Promise<string> {
+  const socket = connect(port, '127.0.0.1')
+  await once(socket, 'connect')
+  const response = once(socket, 'data')
+  socket.write([
+    `GET ${path} HTTP/1.1`,
+    `Host: 127.0.0.1:${String(port)}`,
+    'Connection: Upgrade',
+    'Upgrade: dsh-test',
+    '',
+    '',
+  ].join('\r\n'))
+  const [data] = await response as [Buffer]
+  const text = String(data)
+  socket.destroy()
+  return text
+}
+
 describe('real Loader composition', () => {
   // Real-Loader composition resolves workspace packages through tsx at test
   // time; first resolution after the host/client program split is slow enough
@@ -198,6 +217,77 @@ describe('real Loader composition', () => {
     expect(upgradedServerClosed).toBe(true)
     upgraded.destroy()
     await expect(request(port, '/probe')).rejects.toThrow()
+  })
+
+  it('runs request gates before routing with disposer symmetry', { timeout: 60_000 }, async () => {
+    const loaded = await loadComposition()
+    const server = loaded.webServer
+    const port = server.port
+    server.register({ kind: 'exact', path: '/open', handler: (_req, res) => { res.writeHead(200); res.end('OPEN') } })
+    server.registerFallback((_req, res) => { res.writeHead(200); res.end('FALLBACK') })
+
+    // A blocking gate short-circuits every request before any route or fallback.
+    const seen: string[] = []
+    const releaseBlock = server.registerGate({
+      handle: async (_req, res) => {
+        seen.push('block')
+        res.writeHead(401, { 'content-type': 'text/plain' })
+        res.end('blocked')
+        return false
+      },
+    })
+    expect(await request(port, '/open')).toMatchObject({ status: 401, body: 'blocked' })
+    expect(await request(port, '/unclaimed')).toMatchObject({ status: 401, body: 'blocked' })
+
+    // Gates run in registration order; the first blocking gate stops the chain.
+    releaseBlock()
+    const pass = server.registerGate({ handle: () => { seen.push('pass'); return true } })
+    const blockAgain = server.registerGate({
+      handle: (_req, res) => {
+        seen.push('block-again')
+        res.writeHead(403)
+        res.end('again')
+        return false
+      },
+    })
+    expect(await request(port, '/open')).toMatchObject({ status: 403, body: 'again' })
+    expect(seen).toEqual(['block', 'block', 'pass', 'block-again'])
+
+    // Disposers remove their gate; a lone passing gate admits the route.
+    blockAgain()
+    expect(await request(port, '/open')).toMatchObject({ status: 200, body: 'OPEN' })
+    pass()
+    expect(await request(port, '/open')).toMatchObject({ status: 200, body: 'OPEN' })
+  })
+
+  it('runs upgrade gates before dispatch with disposer symmetry', { timeout: 60_000 }, async () => {
+    const loaded = await loadComposition()
+    const server = loaded.webServer
+    const port = server.port
+
+    let upgraded = false
+    server.registerUpgrade({
+      path: '/events',
+      handler: (_req, socket) => {
+        upgraded = true
+        socket.write('HTTP/1.1 101 Switching Protocols\r\nConnection: Upgrade\r\nUpgrade: dsh-test\r\n\r\n')
+      },
+    })
+
+    // A blocking upgrade gate answers the socket itself and never dispatches.
+    const releaseBlock = server.registerUpgradeGate({
+      handle: (_req, socket) => {
+        socket.end('HTTP/1.1 401 Unauthorized\r\nConnection: close\r\nContent-Length: 0\r\n\r\n')
+        return false
+      },
+    })
+    expect(await rawUpgrade(port, '/events')).toContain('401 Unauthorized')
+    expect(upgraded).toBe(false)
+
+    releaseBlock()
+    const upgradedSocket = await upgrade(port, '/events')
+    expect(upgraded).toBe(true)
+    upgradedSocket.destroy()
   })
 
   it('fails the fiber when the port is already taken (fail-loud at activation)', { timeout: 60_000 }, async () => {

@@ -1,9 +1,10 @@
 /**
  * @deepseek-ai/dsh-host-webserver — Web route-registration plugin: a node:http
  * server plus the `webServer` service (HTTP and upgrade route registries,
- * index transform taps, and the single fallback seat for everything no route
- * claims). Knows no harness concepts and serves no files; the composing
- * application's frontend plugin owns dist serving through the fallback hook.
+ * pre-routing request/upgrade gates, index transform taps, and the single
+ * fallback seat for everything no route claims). Knows no harness concepts and
+ * serves no files; the composing application's frontend plugin owns dist
+ * serving through the fallback hook.
  * Web shape only — Electron loads dist over file:// and carries fetch over an
  * IPC bridge. This package never prints: the URL line belongs to the shell.
  */
@@ -41,6 +42,38 @@ export interface WebUpgradeRoute {
   handler: (req: IncomingMessage, socket: Duplex, head: Buffer) => void | Promise<void>
 }
 
+/**
+ * One pre-routing HTTP request gate. Gates run in registration order before
+ * any route match, so they see every request — including ones a named route
+ * would otherwise claim — and short-circuit at the first gate that answers.
+ */
+export interface WebRequestGate {
+  /**
+   * Decide whether one request may reach routing.
+   * @param req - the node:http request.
+   * @param res - the response the gate writes when blocking.
+   * @returns `true` to continue routing; `false` to stop after the gate has
+   * written its own response.
+   */
+  handle(req: IncomingMessage, res: ServerResponse): boolean | Promise<boolean>
+}
+
+/**
+ * One pre-dispatch WebSocket upgrade gate. Gates run in registration order
+ * before any upgrade route lookup, and short-circuit at the first gate that
+ * answers.
+ */
+export interface WebUpgradeGate {
+  /**
+   * Decide whether one upgrade may reach its registered route.
+   * @param req - the node:http upgrade request.
+   * @param socket - the raw socket the gate answers when blocking.
+   * @returns `true` to continue dispatch; `false` to stop after the gate has
+   * written its own socket answer.
+   */
+  handle(req: IncomingMessage, socket: Duplex): boolean | Promise<boolean>
+}
+
 /** Gateway config: the listen address. */
 export interface Config {
   /** Listen host; the two supported values are loopback and all-interfaces. */
@@ -53,7 +86,9 @@ export interface Config {
  * The browser HTTP carrier service. Activation listens immediately. Route
  * registration order does not affect requests because configured named routes
  * must be distinct, and the fallback handler answers anything not yet claimed
- * during startup with 404 until its owner registers. A listen failure rejects
+ * during startup with 404 until its owner registers. Request and upgrade gates
+ * run before any routing in registration order; a gate returning `false` has
+ * answered the request and short-circuits dispatch. A listen failure rejects
  * initialization, and the boot process reports the failed fiber.
  */
 export class WebServer extends Service {
@@ -65,6 +100,8 @@ export class WebServer extends Service {
   private readonly exact = new Map<string, WebRoute>()
   private readonly prefixes = new Map<string, WebRoute>()
   private readonly upgrades = new Map<string, WebUpgradeRoute>()
+  private readonly gates: WebRequestGate[] = []
+  private readonly upgradeGates: WebUpgradeGate[] = []
   private readonly upgradedSockets = new Set<Duplex>()
   private readonly indexTaps: ((html: string) => string)[] = []
   private fallback: WebRoute['handler'] | undefined
@@ -115,6 +152,36 @@ export class WebServer extends Service {
   }
 
   /**
+   * Register a pre-routing HTTP request gate. Gates run in registration order;
+   * the first gate returning `false` short-circuits the request, and that gate
+   * owns the response. A gate sees every request before any route or fallback.
+   * @param gate - the gate to append.
+   * @returns the disposer removing the gate.
+   */
+  registerGate(gate: WebRequestGate): () => void {
+    this.gates.push(gate)
+    return () => {
+      const at = this.gates.indexOf(gate)
+      if (at !== -1) this.gates.splice(at, 1)
+    }
+  }
+
+  /**
+   * Register a pre-dispatch WebSocket upgrade gate. Gates run in registration
+   * order; the first gate returning `false` short-circuits the upgrade, and
+   * that gate owns the socket answer.
+   * @param gate - the gate to append.
+   * @returns the disposer removing the gate.
+   */
+  registerUpgradeGate(gate: WebUpgradeGate): () => void {
+    this.upgradeGates.push(gate)
+    return () => {
+      const at = this.upgradeGates.indexOf(gate)
+      if (at !== -1) this.upgradeGates.splice(at, 1)
+    }
+  }
+
+  /**
    * Claim the fallback seat: the handler answering every request no named
    * route matches (the SPA dist server in the shipped Web composition). One
    * owner only — a second registration throws, because two fallbacks cannot
@@ -147,6 +214,9 @@ export class WebServer extends Service {
   /** Listen; resolves once the socket is bound (rejection = FAILED fiber). */
   async [Service.init](): Promise<void> {
     const handle = async (req: IncomingMessage, res: ServerResponse): Promise<void> => {
+      for (const gate of this.gates) {
+        if (!(await gate.handle(req, res))) return
+      }
       /* v8 ignore next -- `?? '/'` arm: node:http always sets url on server
       requests; the field is only optional on the client-side IncomingMessage type */
       const rawPath = new URL(req.url ?? '/', 'http://x').pathname
@@ -188,29 +258,10 @@ export class WebServer extends Service {
         socket.off('error', onError)
         this.upgradedSockets.delete(socket)
       })
-      let route: WebUpgradeRoute | undefined
-      try {
-        /* v8 ignore next -- node:http always sets url on server requests. */
-        route = this.upgrades.get(new URL(req.url ?? '/', 'http://x').pathname)
-      } catch (error) {
+      this.handleUpgrade(req, socket, head).catch((error: unknown) => {
         this.ctx.logger.warn(error instanceof Error ? error : new Error(String(error)))
         socket.destroy()
-        return
-      }
-      if (route === undefined) {
-        socket.destroy()
-        return
-      }
-      this.upgradedSockets.add(socket)
-      try {
-        Promise.resolve(route.handler(req, socket, head)).catch((error: unknown) => {
-          this.ctx.logger.warn(error instanceof Error ? error : new Error(String(error)))
-          socket.destroy()
-        })
-      } catch (error) {
-        this.ctx.logger.warn(error instanceof Error ? error : new Error(String(error)))
-        socket.destroy()
-      }
+      })
     })
 
     await new Promise<void>((resolve, reject) => {
@@ -236,6 +287,33 @@ export class WebServer extends Service {
       }))
       await Promise.all([serverClosed, ...upgradedClosed])
     }, 'webServer.listen')
+  }
+
+  /** Run one upgrade through its gates, then dispatch to its registered route. */
+  private async handleUpgrade(req: IncomingMessage, socket: Duplex, head: Buffer): Promise<void> {
+    for (const gate of this.upgradeGates) {
+      if (!(await gate.handle(req, socket))) return
+    }
+    let route: WebUpgradeRoute | undefined
+    try {
+      /* v8 ignore next -- node:http always sets url on server requests. */
+      route = this.upgrades.get(new URL(req.url ?? '/', 'http://x').pathname)
+    } catch (error) {
+      this.ctx.logger.warn(error instanceof Error ? error : new Error(String(error)))
+      socket.destroy()
+      return
+    }
+    if (route === undefined) {
+      socket.destroy()
+      return
+    }
+    this.upgradedSockets.add(socket)
+    try {
+      await route.handler(req, socket, head)
+    } catch (error) {
+      this.ctx.logger.warn(error instanceof Error ? error : new Error(String(error)))
+      socket.destroy()
+    }
   }
 
   /** Longest-prefix-wins over the prefix table after an exact-table miss. */

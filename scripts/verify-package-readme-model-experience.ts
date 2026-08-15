@@ -36,6 +36,8 @@ const NO_MODEL_EXPERIENCE_SECTION: Readonly<Record<string, string>> = {
   'packages/util/launch-environment': 'The package only resolves host environment values; model-facing consumers own any rendered use.',
   'packages/host/agents-catalog': 'The package is a read-only UI catalog over skills and memory; it registers no prompt, schema, or result and never enters a model request.',
   'packages/client/ui-agents-catalog': 'The package is a browser-side read-only panel; it registers no prompt, schema, or result of its own and never enters a model request.',
+  'packages/host/git-workspace': 'The package is a read-only workspace git review service plus user-initiated revert; it registers no prompt, schema, or result and never enters a model request.',
+  'packages/client/ui-git-workspace': 'The package is a browser-side workspace-changes panel; it registers no prompt, schema, or result of its own and never enters a model request.',
 }
 
 /**
@@ -110,6 +112,7 @@ const SENTENCE_MODEL_EXPERIENCE: Readonly<Record<string, SentenceContract>> = {
   'packages/host/directory-picker-native': { kind: 'none', reason: 'The GUI-host picking backend registers nothing model-facing.' },
   'packages/host/webserver': { kind: 'none', reason: 'The HTTP carrier bridges browser and API handler and registers nothing model-facing.' },
   'packages/host/frontend-static': { kind: 'none', reason: 'The SPA dist server answers browser asset requests and registers nothing model-facing.' },
+  'packages/host/web-auth': { kind: 'none', reason: 'The login gate answers browser HTTP and upgrade requests and registers nothing model-facing.' },
   'packages/host/plugin-inventory': { kind: 'none', reason: 'Host-side read-only Loader projection; registers nothing model-facing.' },
   'packages/bundle/base': { kind: 'indirect', reason: 'The bundle is a patch-list carrier; each inserted row\'s package owns its model-facing behavior.' },
   'packages/bundle/headless': { kind: 'none', reason: 'The one-shot runner submits the task as an ordinary user message; prompts and tools belong to the composed base and headless bundles.' },

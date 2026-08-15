@@ -108,6 +108,11 @@
     - id: agents-catalog
       name: '@deepseek-ai/dsh-agents-catalog'
 
+    # Workspace git review the browser's sidebar panel lists: changed files,
+    # per-file diff, and revert. Read-only except for user-initiated revert.
+    - id: git-workspace
+      name: '@deepseek-ai/dsh-git-workspace'
+
     # Ordinary provider for the parsed Web flags. Its plugin-level injection
     # waits for cmdlineArgs; no launcher metadata or special row kind is needed.
     - id: web-startup
@@ -240,6 +245,11 @@
     # the agentsCatalog Remote.
     - id: ui-agents-catalog
       name: '@deepseek-ai/dsh-client-ui-agents-catalog'
+
+    # Workspace changes: the sidebar-foot trigger and master-detail modal over
+    # the gitWorkspace Remote.
+    - id: ui-git-workspace
+      name: '@deepseek-ai/dsh-client-ui-git-workspace'
 
     - id: ui-subagent
       name: '@deepseek-ai/dsh-client-ui-subagent'

@@ -290,6 +290,8 @@
     { "path": "./packages/host/frontend-static" },
     { "path": "./packages/host/plugin-inventory" },
     { "path": "./packages/host/agents-catalog" },
+    { "path": "./packages/host/git-workspace" },
+    { "path": "./packages/host/web-auth" },
     { "path": "./packages/host/webserver" },
     { "path": "./packages/sdk/client" },
     { "path": "./packages/sdk/protocol" },

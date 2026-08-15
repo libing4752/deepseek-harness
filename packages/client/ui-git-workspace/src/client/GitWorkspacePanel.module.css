@@ -1,0 +1,393 @@
+/* Workspace-changes panel: sidebar-foot trigger + centered master-detail modal.
+   The trigger mirrors the settings row rhythm; the panel is a wide dialog with
+   a header, a file list on the left, and the selected file's side-by-side diff
+   on the right. Status colors resolve through --dsw-* tokens. */
+
+/* Trigger row: match the other wide sidebar controls' compact rhythm. */
+.trigger {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: calc(100% + 8px);
+  height: 34px;
+  margin: 4px -4px;
+  padding: 6px 2px 6px 10px;
+  box-sizing: border-box;
+  border: none;
+  border-radius: 12px;
+  background: transparent;
+  cursor: pointer;
+  overflow: hidden;
+  color: var(--dsw-alias-label-primary);
+  font-family: inherit;
+  font-size: 14px;
+  line-height: 22px;
+}
+
+.trigger:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+/* Rail trigger: the same 36x36 circle box as the other rail controls. */
+.trigger.rail {
+  width: 36px;
+  height: 36px;
+  margin: 8px 0;
+  justify-content: center;
+  gap: 0;
+  padding: 0;
+  border-radius: 50%;
+}
+
+.triggerLabel {
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+/* Full-viewport layer, matching the settings modal mask. */
+.overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.mask {
+  position: absolute;
+  inset: 0;
+  background: var(--dsw-alias-bg-mask-1);
+  backdrop-filter: var(--dsw-mask-blur);
+}
+
+.panel {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  width: min(960px, calc(100vw - 48px));
+  height: min(600px, calc(100vh - 48px));
+  max-width: calc(100vw - 48px);
+  border-radius: 24px;
+  overflow: hidden;
+  background: var(--dsw-alias-bg-layer-2);
+  box-shadow: var(--dsw-shadow-lv3);
+  --dsh-scrollbar-thumb: var(--dsw-alias-scrollbar-bg-l2);
+  --dsh-scrollbar-thumb-hover: var(--dsw-alias-scrollbar-hover-l2);
+}
+
+.header {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 54px;
+  padding: 0 14px 0 16px;
+  box-sizing: border-box;
+}
+
+.headerLeft {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.title {
+  font-size: 16px;
+  line-height: 24px;
+  font-weight: 500;
+  color: var(--dsw-alias-label-primary);
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.summary {
+  flex: none;
+  padding: 0 8px;
+  border-radius: 8px;
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  line-height: 20px;
+}
+
+.headerRight {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: none;
+}
+
+.revertAll {
+  flex: none;
+  padding: 4px 10px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  cursor: pointer;
+  color: var(--dsw-alias-state-error-primary);
+  font-family: inherit;
+  font-size: 13px;
+  line-height: 20px;
+}
+
+.revertAll:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.revertAll:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: none;
+  border-radius: 28px;
+  background: transparent;
+  cursor: pointer;
+  color: var(--dsw-alias-label-primary);
+}
+
+.close:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+/* Revert-all confirmation bar. */
+.confirmBar {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px;
+  background: color-mix(in srgb, var(--dsw-alias-state-error-secondary) 10%, transparent);
+}
+
+.confirmText {
+  flex: 1;
+  min-width: 0;
+  color: var(--dsw-alias-state-error-primary);
+  font-size: 13px;
+  line-height: 20px;
+}
+
+.confirmCancel,
+.confirmOk {
+  flex: none;
+  padding: 3px 10px;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 13px;
+  line-height: 20px;
+}
+
+.confirmCancel {
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-secondary);
+}
+
+.confirmOk {
+  background: var(--dsw-alias-state-error-primary);
+  color: var(--dsw-static-white);
+}
+
+.confirmOk:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+/* Body: a status band, or the master-detail split. */
+.body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.status {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 32px 16px;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 14px;
+  line-height: 22px;
+  text-align: center;
+}
+
+.status[data-error] {
+  color: var(--dsw-alias-state-error-primary);
+}
+
+.split {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+}
+
+/* Left file list. */
+.list {
+  flex: none;
+  width: 320px;
+  min-height: 0;
+  margin: 0;
+  padding: 8px;
+  box-sizing: border-box;
+  overflow-y: auto;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  border-right: 1px solid var(--dsw-alias-border);
+}
+
+.fileRow {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  border-radius: 10px;
+}
+
+.fileRow:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.fileRowSelected {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.fileMain {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 4px 7px 8px;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  font-family: inherit;
+  text-align: left;
+}
+
+.statusDot {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+
+.filePath {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: 13px;
+  line-height: 20px;
+  color: var(--dsw-alias-label-primary);
+}
+
+.badge {
+  flex: none;
+  padding: 0 6px;
+  border-radius: 6px;
+  font-size: 11px;
+  line-height: 18px;
+}
+
+.revert {
+  flex: none;
+  padding: 2px 6px;
+  margin-right: 6px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  cursor: pointer;
+  color: var(--dsw-alias-label-secondary);
+  font-family: inherit;
+  font-size: 12px;
+  line-height: 18px;
+  opacity: 0;
+}
+
+.fileRow:hover .revert {
+  opacity: 1;
+}
+
+.revert:hover {
+  color: var(--dsw-alias-state-error-primary);
+}
+
+.revert:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+/* Right diff pane. */
+.diff {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  padding: 8px 16px 16px;
+  overflow: auto;
+}
+
+.hint {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 32px 16px;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 13px;
+  line-height: 20px;
+}
+
+/* Status colors (dot + badge share one tint per kind). */
+.badgeAdded {
+  --dsl-git-status: var(--dsw-alias-state-success-primary);
+  --dsl-git-status-bg: color-mix(in srgb, var(--dsw-alias-state-success-secondary) 14%, transparent);
+}
+
+.badgeModified {
+  --dsl-git-status: var(--dsw-alias-state-warn-primary);
+  --dsl-git-status-bg: color-mix(in srgb, var(--dsw-alias-state-warn-secondary) 14%, transparent);
+}
+
+.badgeDeleted {
+  --dsl-git-status: var(--dsw-alias-state-error-primary);
+  --dsl-git-status-bg: color-mix(in srgb, var(--dsw-alias-state-error-secondary) 14%, transparent);
+}
+
+.badgeUntracked {
+  --dsl-git-status: var(--dsw-alias-label-secondary);
+  --dsl-git-status-bg: var(--dsw-alias-interactive-bg-hover);
+}
+
+.statusDot.badgeAdded,
+.statusDot.badgeModified,
+.statusDot.badgeDeleted,
+.statusDot.badgeUntracked {
+  background: var(--dsl-git-status);
+}
+
+.badge.badgeAdded,
+.badge.badgeModified,
+.badge.badgeDeleted,
+.badge.badgeUntracked {
+  background: var(--dsl-git-status-bg);
+  color: var(--dsl-git-status);
+}
