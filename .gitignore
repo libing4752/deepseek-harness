@@ -1,5 +1,7 @@
 CLAUDE.local.md
 .env
+# 本机启动脚本：内含明文密码，勿提交
+start-web.sh
 node_modules/
 lib/
 *.tsbuildinfo

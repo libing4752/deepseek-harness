@@ -1,0 +1,11 @@
+# web-auth 登录门补丁层：由 start-web.sh 通过 `dsh web --patch` 挂载。
+# 用户名/密码来自环境变量（在 start-web.sh 顶部设置），不写在这个文件里。
+- insert:
+    - id: web-auth
+      name: '@deepseek-ai/dsh-host-web-auth'
+      config:
+        username: !!js process.env.DSH_WEB_USERNAME
+        password: !!js process.env.DSH_WEB_PASSWORD
+        sessionSecret: !!js process.env.DSH_WEB_SESSION_SECRET ?? ''
+        # 只有当你只通过可信反向代理访问时才打开（代理需覆写 X-Forwarded-For）
+        trustProxyHeaders: false

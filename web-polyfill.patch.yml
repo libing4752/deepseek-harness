@@ -1,0 +1,7 @@
+# web-polyfill 运行时 polyfill 层：由 start-web.sh 通过 `dsh web --patch` 挂载。
+# 在每次 index.html 响应时注入 crypto.randomUUID fallback（幂等），
+# 使 HTTP + 公网 IP（非安全上下文）下前端 RPC 也能正常工作。
+- insert:
+    - id: web-polyfill
+      name: '/Users/libing/my_project/deepseek-harness/web-polyfill.ts'
+      config: {}
